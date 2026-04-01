@@ -1521,7 +1521,7 @@ ${Object.keys(size)
       const adb = await this.getAdb();
       // Use a more reliable path resolution method
       const androidPkgJson = createRequire(import.meta.url).resolve(
-        '@midscene/android/package.json',
+        '@xiuchang-midscene/android/package.json',
       );
       const yadbBin = path.join(path.dirname(androidPkgJson), 'bin', 'yadb');
       await adb.push(yadbBin, '/data/local/tmp');
@@ -1666,36 +1666,58 @@ ${Object.keys(size)
     if (effectiveFallback?.length) {
       // ----------------------------------------------------------------
       // IME fallback mode: try each strategy in order, verify with AI.
+      // Repeats up to MAX_ROUNDS rounds so that if all strategies fail
+      // in the first round the loop starts over (clipboard → adb-keyboard
+      // → clipboard → adb-keyboard …) rather than giving up immediately.
       // ----------------------------------------------------------------
-      for (let i = 0; i < effectiveFallback.length; i++) {
-        const strategy = effectiveFallback[i];
-        const isLast = i === effectiveFallback.length - 1;
+      const MAX_ROUNDS = 2;
+      const totalAttempts = effectiveFallback.length * MAX_ROUNDS;
+      let succeeded = false;
+
+      for (let i = 0; i < totalAttempts; i++) {
+        const strategy = effectiveFallback[i % effectiveFallback.length];
+        const isLast = i === totalAttempts - 1;
         debugDevice(
-          `[IME fallback] trying strategy: ${strategy} (${i + 1}/${effectiveFallback.length})`,
+          `[IME fallback] trying strategy: ${strategy} (attempt ${i + 1}/${totalAttempts})`,
         );
 
         await this._typeWithStrategy(text, strategy, adb);
 
         if (isLast) {
-          // Last strategy: no verification needed, just proceed
-          debugDevice('[IME fallback] all strategies tried');
+          debugDevice('[IME fallback] all attempts exhausted');
           break;
         }
 
-        // Wait briefly for the UI to settle before taking the verification screenshot
-        await sleep(300);
+        // Keep the keyboard shown during verification so the input field
+        // stays focused. This is critical for adb-keyboard: it needs an
+        // active InputConnection, which is only available while the field
+        // is focused (keyboard visible). Dismissing before verification
+        // would break the adb-keyboard strategy.
+        // If the AI model can't parse the screenshot (returns empty content),
+        // the catch in inputVerifyFn returns false, which correctly triggers
+        // the fallback — no need for special handling here.
+        await sleep(800);
+
         const success = await this.inputVerifyFn!(text);
         if (success) {
           debugDevice(`[IME fallback] strategy '${strategy}' succeeded`);
+          succeeded = true;
           break;
         }
 
         debugDevice(
           `[IME fallback] strategy '${strategy}' failed, clearing field and trying next`,
         );
-        // Clear the incorrectly typed content before the next attempt
+        // Clear the incorrectly typed content before the next attempt.
+        // The keyboard is still shown so the input field is focused and
+        // clearTextField (keyevent-based) works reliably.
         await adb.clearTextField(100);
       }
+
+      // If a strategy succeeded but we're not on the last attempt, the
+      // keyboard is still shown — dismiss it now via the normal path below.
+      // If we exhausted all attempts without success, also dismiss.
+      debugDevice(`[IME fallback] done, succeeded=${succeeded}`);
     } else {
       // ----------------------------------------------------------------
       // Original single-strategy path (no fallback configured or not applicable)

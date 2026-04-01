@@ -76,7 +76,7 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     device.inputVerifyFn = async (text: string): Promise<boolean> => {
       try {
         return await this.aiBoolean(
-          `the currently focused input field contains the text "${text}"`,
+          `the currently focused input field (text box) shows "${text}" as its actual typed value — ignore any IME candidate bar, autocomplete dropdown, or search suggestion list below the field; only check the input field itself`,
         );
       } catch {
         return false;
