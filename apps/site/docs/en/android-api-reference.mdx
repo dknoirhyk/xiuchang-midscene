@@ -47,9 +47,11 @@ const device = new AndroidDevice(deviceId, {
 - `keyboardDismissStrategy?: 'esc-first' | 'back-first'` &mdash; Order for dismissing keyboards. Default `'esc-first'`.
 - `androidAdbPath?: string` &mdash; Custom path to the adb executable.
 - `remoteAdbHost?: string` / `remoteAdbPort?: number` &mdash; Point to a remote adb server.
-- `imeStrategy?: 'always-yadb' | 'yadb-for-non-ascii'` &mdash; Choose when to invoke [yadb](https://github.com/ysbing/YADB) for text input. Default `'yadb-for-non-ascii'`.
+- `imeStrategy?: 'always-yadb' | 'yadb-for-non-ascii' | 'clipboard' | 'adb-keyboard'` &mdash; Choose when to invoke [yadb](https://github.com/ysbing/YADB) for text input. Default `'yadb-for-non-ascii'`.
   - `'yadb-for-non-ascii'` (default) &mdash; Uses yadb for Unicode characters (including Latin Unicode like ö, é, ñ), Chinese, Japanese, and format specifiers (like %s, %d). Pure ASCII text uses the faster native `adb input text`.
   - `'always-yadb'` &mdash; Always uses yadb for all text input, providing maximum compatibility but slightly slower for pure ASCII text.
+  - `'clipboard'` &mdash; Writes text to the device clipboard via yadb (`-writeClipboard`), then sends `KEYCODE_PASTE`. Unlike direct keyboard injection, paste goes through Android's standard `InputConnection`, which allows apps to properly clear hint/placeholder text before inserting. Useful for input fields where direct injection causes text to be appended to existing hint content.
+  - `'adb-keyboard'` &mdash; Switches the device IME to [ADBKeyboard](https://github.com/senzhk/ADBKeyBoard), sends text via broadcast (`ADB_INPUT_B64`), then restores the original IME. Like `'clipboard'`, this goes through `InputConnection` and correctly handles hint text clearing. Requires ADBKeyboard to be installed on the device.
 - `displayId?: number` &mdash; Target a specific virtual display if the device mirrors multiple displays.
 - `screenshotResizeScale?: number` &mdash; **Deprecated.** This option has been removed and no longer has any effect. Use `screenshotShrinkFactor` in `AgentOpt` instead to control screenshot size sent to the AI model.
 - `alwaysRefreshScreenInfo?: boolean` &mdash; Re-query rotation and screen size every step. Default `false`.

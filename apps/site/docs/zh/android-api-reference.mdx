@@ -47,9 +47,11 @@ const device = new AndroidDevice(deviceId, {
 - `keyboardDismissStrategy?: 'esc-first' | 'back-first'` —— 关闭键盘的顺序，默认 `'esc-first'`。
 - `androidAdbPath?: string` —— adb 可执行文件的自定义路径。
 - `remoteAdbHost?: string` / `remoteAdbPort?: number` —— 指向远程 adb server。
-- `imeStrategy?: 'always-yadb' | 'yadb-for-non-ascii'` —— 控制何时调用 [yadb](https://github.com/ysbing/YADB) 进行文本输入，默认 `'yadb-for-non-ascii'`。
+- `imeStrategy?: 'always-yadb' | 'yadb-for-non-ascii' | 'clipboard' | 'adb-keyboard'` —— 控制何时调用 [yadb](https://github.com/ysbing/YADB) 进行文本输入，默认 `'yadb-for-non-ascii'`。
   - `'yadb-for-non-ascii'`（默认）—— 对 Unicode 字符（包括 Latin Unicode 如 ö、é、ñ）、中文、日文以及格式化符号（如 %s、%d）使用 yadb。纯 ASCII 文本使用更快的原生 `adb input text`。
   - `'always-yadb'` —— 对所有文本输入始终使用 yadb，提供最大兼容性，但对纯 ASCII 文本稍慢。
+  - `'clipboard'` —— 通过 yadb 的 `-writeClipboard` 命令将文字写入设备剪贴板，然后发送 `KEYCODE_PASTE` 粘贴。与直接键盘注入不同，粘贴操作经过 Android 标准的 `InputConnection`，允许应用在插入内容前正确清除底纹词（hint/placeholder）。适用于直接注入会导致文字追加到底纹词后面的输入框。
+  - `'adb-keyboard'` —— 将设备输入法切换为 [ADBKeyboard](https://github.com/senzhk/ADBKeyBoard)，通过广播（`ADB_INPUT_B64`）发送文字，输入完成后还原原输入法。与 `'clipboard'` 类似，该方式经过 `InputConnection`，可正确处理底纹词清除，且对所有 Unicode 字符无障碍。需要设备已安装 ADBKeyboard。
 - `displayId?: number` —— 在设备镜像多个屏幕时，选择特定虚拟屏幕。
 - `screenshotResizeScale?: number` —— **已废弃。** 此选项已移除，不再生效。如需控制发送给 AI 模型的截图尺寸，请使用 `AgentOpt` 中的 `screenshotShrinkFactor`。
 - `alwaysRefreshScreenInfo?: boolean` —— 每一步都重新查询旋转角度与屏幕尺寸，默认 `false`。
