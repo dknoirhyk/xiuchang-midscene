@@ -23,7 +23,7 @@ Promise.resolve(
         'If any location, permission, user agreement, etc. popup, click agree. If login page pops up, close it.',
     });
     await page.connect();
-    await agent.aiAct('输入："杭州"');
+    await agent.aiAct('搜索："杭州"，等待搜索结果出现，校验搜索结果是否和杭州有关');
 
     sleep(2000);
   })(),

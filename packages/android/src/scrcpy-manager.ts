@@ -228,7 +228,7 @@ export class ScrcpyScreenshotManager {
    */
   private resolveServerBinPath(): string {
     const androidPkgJson = createRequire(import.meta.url).resolve(
-      '@midscene/android/package.json',
+      '@xiuchang-midscene/android/package.json',
     );
     return path.join(path.dirname(androidPkgJson), 'bin', 'scrcpy-server');
   }
