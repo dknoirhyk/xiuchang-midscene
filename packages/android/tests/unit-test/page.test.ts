@@ -29,6 +29,11 @@ const createMockAdb = () => ({
   hideKeyboard: vi.fn(),
   push: vi.fn(),
   isSoftKeyboardPresent: vi.fn().mockResolvedValue(false),
+  enableIME: vi.fn(),
+  setIME: vi.fn(),
+  defaultIME: vi
+    .fn()
+    .mockResolvedValue('com.example.defaultkeyboard/.DefaultIME'),
 });
 
 let mockAdbInstance: ReturnType<typeof createMockAdb>;
@@ -186,7 +191,7 @@ describe('AndroidDevice', () => {
 
       await device.mouseClick(100, 200);
       expect(mockAdb.shell).toHaveBeenCalledWith(
-        'input swipe 200 400 200 400 150',
+        'input swipe 200 400 200 400 50',
       );
     });
 
@@ -342,7 +347,7 @@ describe('AndroidDevice', () => {
       });
       await device.mouseClick(100, 150);
       expect(mockAdb.shell).toHaveBeenCalledWith(
-        'input swipe 200 300 200 300 150',
+        'input swipe 200 300 200 300 50',
       );
     });
 
@@ -855,6 +860,299 @@ describe('AndroidDevice', () => {
             '你好,Schönberg',
           );
           expect(mockAdb.inputText).not.toHaveBeenCalled();
+        });
+
+        // ---------------------------------------------------------------
+        // clipboard strategy
+        // ---------------------------------------------------------------
+        describe('clipboard strategy', () => {
+          beforeEach(() => {
+            device.options = {
+              imeStrategy: 'clipboard',
+              autoDismissKeyboard: false,
+            };
+            vi.spyOn(device as any, 'execYadbWriteClipboard').mockResolvedValue(
+              undefined,
+            );
+          });
+
+          it('uses execYadbWriteClipboard and KEYCODE_PASTE for ASCII text', async () => {
+            await device.keyboardType('hello');
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'hello',
+            );
+            expect(mockAdb.keyevent).toHaveBeenCalledWith(279); // KEYCODE_PASTE
+            expect((device as any).execYadb).not.toHaveBeenCalled();
+            expect(mockAdb.inputText).not.toHaveBeenCalled();
+          });
+
+          it('uses execYadbWriteClipboard and KEYCODE_PASTE for Chinese text', async () => {
+            await device.keyboardType('豆包');
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              '豆包',
+            );
+            expect(mockAdb.keyevent).toHaveBeenCalledWith(279); // KEYCODE_PASTE
+            expect((device as any).execYadb).not.toHaveBeenCalled();
+            expect(mockAdb.inputText).not.toHaveBeenCalled();
+          });
+
+          it('uses execYadbWriteClipboard and KEYCODE_PASTE for mixed text', async () => {
+            await device.keyboardType('Search 豆包');
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'Search 豆包',
+            );
+            expect(mockAdb.keyevent).toHaveBeenCalledWith(279); // KEYCODE_PASTE
+          });
+
+          it('does not call execYadb or inputText', async () => {
+            await device.keyboardType('任意文本');
+            expect((device as any).execYadb).not.toHaveBeenCalled();
+            expect(mockAdb.inputText).not.toHaveBeenCalled();
+          });
+
+          it('skips empty text', async () => {
+            await device.keyboardType('');
+            expect(
+              (device as any).execYadbWriteClipboard,
+            ).not.toHaveBeenCalled();
+            expect(mockAdb.keyevent).not.toHaveBeenCalled();
+          });
+        });
+
+        // ---------------------------------------------------------------
+        // adb-keyboard strategy
+        // ---------------------------------------------------------------
+        describe('adb-keyboard strategy', () => {
+          const ADB_KEYBOARD_IME_ID = 'com.android.adbkeyboard/.AdbIME';
+          const ORIGINAL_IME = 'com.example.defaultkeyboard/.DefaultIME';
+
+          beforeEach(() => {
+            device.options = {
+              imeStrategy: 'adb-keyboard',
+              autoDismissKeyboard: false,
+            };
+            mockAdb.defaultIME.mockResolvedValue(ORIGINAL_IME);
+          });
+
+          it('enables and switches to ADBKeyboard, then restores original IME', async () => {
+            await device.keyboardType('hello');
+            expect(mockAdb.enableIME).toHaveBeenCalledWith(ADB_KEYBOARD_IME_ID);
+            expect(mockAdb.setIME).toHaveBeenNthCalledWith(
+              1,
+              ADB_KEYBOARD_IME_ID,
+            );
+            expect(mockAdb.setIME).toHaveBeenNthCalledWith(2, ORIGINAL_IME);
+          });
+
+          it('sends ADB_INPUT_B64 broadcast with base64-encoded ASCII text', async () => {
+            await device.keyboardType('hello');
+            const b64 = Buffer.from('hello', 'utf8').toString('base64');
+            expect(mockAdb.shell).toHaveBeenCalledWith(
+              `am broadcast -a ADB_INPUT_B64 --es msg "${b64}"`,
+            );
+          });
+
+          it('sends ADB_INPUT_B64 broadcast with base64-encoded Chinese text', async () => {
+            await device.keyboardType('豆包');
+            const b64 = Buffer.from('豆包', 'utf8').toString('base64');
+            expect(mockAdb.shell).toHaveBeenCalledWith(
+              `am broadcast -a ADB_INPUT_B64 --es msg "${b64}"`,
+            );
+          });
+
+          it('does not call execYadb or inputText', async () => {
+            await device.keyboardType('任意文本');
+            expect((device as any).execYadb).not.toHaveBeenCalled();
+            expect(mockAdb.inputText).not.toHaveBeenCalled();
+          });
+
+          it('does not switch back if ADBKeyboard is already the default IME', async () => {
+            mockAdb.defaultIME.mockResolvedValue(ADB_KEYBOARD_IME_ID);
+            await device.keyboardType('hello');
+            // setIME called once (to switch to ADBKeyboard), but NOT a second time to restore
+            expect(mockAdb.setIME).toHaveBeenCalledTimes(1);
+            expect(mockAdb.setIME).toHaveBeenCalledWith(ADB_KEYBOARD_IME_ID);
+          });
+
+          it('skips empty text', async () => {
+            await device.keyboardType('');
+            expect(mockAdb.enableIME).not.toHaveBeenCalled();
+            expect(mockAdb.setIME).not.toHaveBeenCalled();
+            expect(mockAdb.shell).not.toHaveBeenCalled();
+          });
+        });
+
+        // ---------------------------------------------------------------
+        // IME fallback — inputVerifyFn driven (injected by AndroidAgent)
+        // ---------------------------------------------------------------
+        describe('IME fallback (inputVerifyFn injected)', () => {
+          const ADB_KEYBOARD_IME_ID = 'com.android.adbkeyboard/.AdbIME';
+          const ORIGINAL_IME = 'com.example.defaultkeyboard/.DefaultIME';
+
+          beforeEach(() => {
+            vi.spyOn(device as any, 'execYadbWriteClipboard').mockResolvedValue(
+              undefined,
+            );
+            mockAdb.defaultIME.mockResolvedValue(ORIGINAL_IME);
+          });
+
+          afterEach(() => {
+            device.inputVerifyFn = undefined;
+          });
+
+          // Helper: set inputVerifyFn that succeeds on the Nth call
+          const makeVerifyFn = (succeedOnCall: number) => {
+            let calls = 0;
+            return vi.fn(async () => {
+              calls += 1;
+              return calls >= succeedOnCall;
+            });
+          };
+
+          it('default (no imeStrategy): clipboard first; succeeds → no adb-keyboard', async () => {
+            device.options = { autoDismissKeyboard: false };
+            device.inputVerifyFn = makeVerifyFn(1); // always succeeds
+
+            await device.keyboardType('hello');
+
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'hello',
+            );
+            expect(mockAdb.keyevent).toHaveBeenCalledWith(279); // KEYCODE_PASTE
+            // adb-keyboard should NOT have been called
+            expect(mockAdb.enableIME).not.toHaveBeenCalled();
+            expect(device.inputVerifyFn).toHaveBeenCalledTimes(1);
+          });
+
+          it('default (no imeStrategy): clipboard fails → adb-keyboard used as fallback', async () => {
+            device.options = { autoDismissKeyboard: false };
+            device.inputVerifyFn = makeVerifyFn(99); // never succeeds
+
+            await device.keyboardType('hello');
+
+            // clipboard attempted first
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'hello',
+            );
+            // field cleared before fallback
+            expect(mockAdb.clearTextField).toHaveBeenCalledWith(100);
+            // adb-keyboard attempted second
+            expect(mockAdb.enableIME).toHaveBeenCalledWith(ADB_KEYBOARD_IME_ID);
+            const b64 = Buffer.from('hello', 'utf8').toString('base64');
+            expect(mockAdb.shell).toHaveBeenCalledWith(
+              `am broadcast -a ADB_INPUT_B64 --es msg "${b64}"`,
+            );
+          });
+
+          it('imeStrategy clipboard: clipboard first; fails → adb-keyboard fallback', async () => {
+            device.options = {
+              imeStrategy: 'clipboard',
+              autoDismissKeyboard: false,
+            };
+            device.inputVerifyFn = makeVerifyFn(99); // never succeeds
+
+            await device.keyboardType('杭州');
+
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              '杭州',
+            );
+            expect(mockAdb.clearTextField).toHaveBeenCalledWith(100);
+            const b64 = Buffer.from('杭州', 'utf8').toString('base64');
+            expect(mockAdb.shell).toHaveBeenCalledWith(
+              `am broadcast -a ADB_INPUT_B64 --es msg "${b64}"`,
+            );
+          });
+
+          it('imeStrategy adb-keyboard: adb-keyboard first; fails → clipboard fallback', async () => {
+            device.options = {
+              imeStrategy: 'adb-keyboard',
+              autoDismissKeyboard: false,
+            };
+            device.inputVerifyFn = makeVerifyFn(99); // never succeeds
+
+            await device.keyboardType('test');
+
+            // adb-keyboard attempted first
+            expect(mockAdb.enableIME).toHaveBeenCalledWith(ADB_KEYBOARD_IME_ID);
+            // field cleared before fallback
+            expect(mockAdb.clearTextField).toHaveBeenCalledWith(100);
+            // clipboard attempted second
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'test',
+            );
+            expect(mockAdb.keyevent).toHaveBeenCalledWith(279);
+          });
+
+          it('imeStrategy always-yadb: no fallback, yadb path used', async () => {
+            device.options = {
+              imeStrategy: 'always-yadb',
+              autoDismissKeyboard: false,
+            };
+            device.inputVerifyFn = vi.fn(); // won't be called
+
+            await device.keyboardType('hello');
+
+            expect((device as any).execYadb).toHaveBeenCalledWith('hello');
+            expect(
+              (device as any).execYadbWriteClipboard,
+            ).not.toHaveBeenCalled();
+            expect(mockAdb.enableIME).not.toHaveBeenCalled();
+            expect(device.inputVerifyFn).not.toHaveBeenCalled();
+          });
+
+          it('imeStrategy yadb-for-non-ascii: no fallback, yadb path used for non-ASCII', async () => {
+            device.options = {
+              imeStrategy: 'yadb-for-non-ascii',
+              autoDismissKeyboard: false,
+            };
+            device.inputVerifyFn = vi.fn(); // won't be called
+
+            await device.keyboardType('你好');
+
+            expect((device as any).execYadb).toHaveBeenCalledWith('你好');
+            expect(
+              (device as any).execYadbWriteClipboard,
+            ).not.toHaveBeenCalled();
+            expect(device.inputVerifyFn).not.toHaveBeenCalled();
+          });
+
+          it('explicit inputFallbackStrategies overrides imeStrategy order', async () => {
+            device.options = {
+              imeStrategy: 'clipboard', // would normally put clipboard first
+              inputFallbackStrategies: ['adb-keyboard', 'clipboard'],
+              autoDismissKeyboard: false,
+            };
+            device.inputVerifyFn = makeVerifyFn(99); // never succeeds
+
+            await device.keyboardType('test');
+
+            // adb-keyboard should come first (from explicit list)
+            expect(mockAdb.enableIME).toHaveBeenCalledWith(ADB_KEYBOARD_IME_ID);
+            expect(mockAdb.clearTextField).toHaveBeenCalledWith(100);
+            // clipboard second
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'test',
+            );
+          });
+
+          it('no fallback attempt when inputVerifyFn is not set', async () => {
+            device.options = {
+              imeStrategy: 'clipboard',
+              autoDismissKeyboard: false,
+            };
+            // inputVerifyFn not set → original single-strategy path
+            vi.spyOn(device as any, 'execYadbWriteClipboard').mockResolvedValue(
+              undefined,
+            );
+
+            await device.keyboardType('hello');
+
+            expect((device as any).execYadbWriteClipboard).toHaveBeenCalledWith(
+              'hello',
+            );
+            expect(mockAdb.clearTextField).not.toHaveBeenCalled();
+            expect(mockAdb.enableIME).not.toHaveBeenCalled();
+          });
         });
       });
     });

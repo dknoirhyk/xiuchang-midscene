@@ -20,8 +20,32 @@ export type AndroidDeviceOpt = {
   remoteAdbHost?: string;
   /** Remote ADB port */
   remoteAdbPort?: number;
-  /** Input method editor strategy: 'always-yadb' always uses yadb, 'yadb-for-non-ascii' uses yadb only for non-ASCII characters */
-  imeStrategy?: 'always-yadb' | 'yadb-for-non-ascii';
+  /**
+   * Input method editor strategy for text input.
+   * - `'yadb-for-non-ascii'` (default) — Uses yadb for Unicode/non-ASCII characters; pure ASCII uses the faster native `adb input text`.
+   * - `'always-yadb'` — Always uses yadb for all text input.
+   * - `'clipboard'` — Writes text to the device clipboard via yadb (`-writeClipboard`), then sends KEYCODE_PASTE.
+   *   This goes through Android's standard InputConnection, which allows apps to clear hint/placeholder text before inserting.
+   *   Useful for input fields that have hint text (底纹词) that is not properly cleared by direct keyboard injection.
+   */
+  imeStrategy?:
+    | 'always-yadb'
+    | 'yadb-for-non-ascii'
+    | 'clipboard'
+    | 'adb-keyboard';
+  /**
+   * Ordered list of IME strategies to try when an input attempt fails.
+   * Requires `AndroidAgent` (which injects the AI verification function).
+   * Strategies are tried in sequence; if a strategy fails (as judged by AI),
+   * the next one is attempted after clearing the field.
+   *
+   * Only `'clipboard'` and `'adb-keyboard'` are supported in the fallback list.
+   * Example: `['clipboard', 'adb-keyboard']` — try clipboard first, fall back to ADBKeyboard.
+   *
+   * When this option is set, `imeStrategy` is ignored for input operations;
+   * the first entry in the list acts as the primary strategy.
+   */
+  inputFallbackStrategies?: Array<'clipboard' | 'adb-keyboard'>;
   /** Display ID to use for this device */
   displayId?: number;
   /** Use physical display ID for screenshot operations */

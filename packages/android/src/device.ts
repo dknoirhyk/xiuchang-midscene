@@ -65,6 +65,9 @@ const defaultNormalScrollDuration = 1000;
 
 const IME_STRATEGY_ALWAYS_YADB = 'always-yadb' as const;
 const IME_STRATEGY_YADB_FOR_NON_ASCII = 'yadb-for-non-ascii' as const;
+const IME_STRATEGY_CLIPBOARD = 'clipboard' as const;
+const IME_STRATEGY_ADB_KEYBOARD = 'adb-keyboard' as const;
+const ADB_KEYBOARD_IME_ID = 'com.android.adbkeyboard/.AdbIME';
 
 const debugDevice = getDebug('android:device');
 
@@ -105,6 +108,8 @@ export class AndroidDevice implements AbstractInterface {
   private static readonly TAKE_SCREENSHOT_FAIL_THRESHOLD = 3;
   interfaceType: InterfaceType = 'android';
   uri: string | undefined;
+  /** Set by AndroidAgent to provide AI-based verification for IME fallback. */
+  inputVerifyFn?: (text: string) => Promise<boolean>;
   options?: AndroidDeviceOpt;
 
   actionSpace(): DeviceAction<any>[] {
@@ -614,6 +619,61 @@ ${Object.keys(size)
     await adb.shell(
       `app_process${this.getDisplayArg()} -Djava.class.path=/data/local/tmp/yadb /data/local/tmp com.ysbing.yadb.Main -keyboard '${keyboardContent}'`,
     );
+  }
+
+  /**
+   * Write text to the device clipboard using yadb's -writeClipboard command.
+   * Requires yadb v1.1.0+.
+   */
+  async execYadbWriteClipboard(text: string): Promise<void> {
+    await this.ensureYadb();
+
+    const adb = await this.getAdb();
+
+    await adb.shell(
+      `app_process${this.getDisplayArg()} -Djava.class.path=/data/local/tmp/yadb /data/local/tmp com.ysbing.yadb.Main -writeClipboard '${escapeForShell(text)}'`,
+    );
+  }
+
+  /**
+   * Input text via ADBKeyboard IME.
+   * Flow:
+   *   1. Record the current default IME.
+   *   2. Enable and switch to ADBKeyboard, wait for activation.
+   *   3. Send text via broadcast (base64-encoded to handle any Unicode safely).
+   *   4. Restore the original IME.
+   *
+   * Requires ADBKeyboard (com.android.adbkeyboard) to be installed on the device.
+   */
+  private async typeViaAdbKeyboard(text: string): Promise<void> {
+    const adb = await this.getAdb();
+
+    // Step 1: Record the current IME so we can restore it afterwards
+    const originalIme = await adb.defaultIME();
+    debugDevice(`[adb-keyboard] current IME: ${originalIme}`);
+
+    try {
+      // Step 2a: Enable ADBKeyboard (in case it was disabled)
+      await adb.enableIME(ADB_KEYBOARD_IME_ID);
+
+      // Step 2b: Switch to ADBKeyboard
+      await adb.setIME(ADB_KEYBOARD_IME_ID);
+
+      // Step 2c: Wait for the IME to fully activate
+      await sleep(500);
+
+      // Step 3: Send text via ADBKeyboard broadcast.
+      // Use base64 encoding (ADB_INPUT_B64) to safely handle Chinese, emoji,
+      // and all special characters without any shell-escaping concerns.
+      const b64 = Buffer.from(text, 'utf8').toString('base64');
+      await adb.shell(`am broadcast -a ADB_INPUT_B64 --es msg "${b64}"`);
+    } finally {
+      // Step 4: Restore the original IME regardless of success/failure
+      if (originalIme && originalIme !== ADB_KEYBOARD_IME_ID) {
+        debugDevice(`[adb-keyboard] restoring IME to: ${originalIme}`);
+        await adb.setIME(originalIme);
+      }
+    }
   }
 
   // @deprecated
@@ -1239,14 +1299,17 @@ ${Object.keys(size)
         globalConfigManager.getEnvConfigValue(MIDSCENE_ANDROID_IME_STRATEGY)) ??
       IME_STRATEGY_YADB_FOR_NON_ASCII;
 
-    if (IME_STRATEGY === IME_STRATEGY_YADB_FOR_NON_ASCII) {
-      // For yadb-for-non-ascii mode, use batch deletion of up to 100 characters
+    if (
+      IME_STRATEGY === IME_STRATEGY_YADB_FOR_NON_ASCII ||
+      IME_STRATEGY === IME_STRATEGY_ADB_KEYBOARD
+    ) {
+      // For yadb-for-non-ascii and adb-keyboard modes, use batch deletion of up to 100 characters
       // clearTextField() batches all key events into a single shell command for better performance
       await adb.clearTextField(100);
     } else {
-      // Use the yadb tool to clear the input box
+      // Use yadb's -keyboardClear command (available since yadb v1.1.0) to clear the input box
       await adb.shell(
-        `app_process${this.getDisplayArg()} -Djava.class.path=/data/local/tmp/yadb /data/local/tmp com.ysbing.yadb.Main -keyboard "~CLEAR~"`,
+        `app_process${this.getDisplayArg()} -Djava.class.path=/data/local/tmp/yadb /data/local/tmp com.ysbing.yadb.Main -keyboardClear`,
       );
     }
 
@@ -1503,41 +1566,148 @@ ${Object.keys(size)
     );
   }
 
+  /**
+   * Execute text input using a specific strategy.
+   * Pure execution — no keyboard-dismiss logic, no strategy resolution.
+   */
+  private async _typeWithStrategy(
+    text: string,
+    strategy: string,
+    adb: ADB,
+  ): Promise<void> {
+    if (strategy === IME_STRATEGY_CLIPBOARD) {
+      // Write text to device clipboard via yadb, then paste via KEYCODE_PASTE.
+      // Unlike yadb's -keyboard injection, paste goes through Android's standard
+      // InputConnection, which allows apps to properly clear hint/placeholder text
+      // (底纹词) before inserting the new content.
+      await this.execYadbWriteClipboard(text);
+      await adb.keyevent(279); // KEYCODE_PASTE
+    } else if (strategy === IME_STRATEGY_ADB_KEYBOARD) {
+      // Switch to ADBKeyboard, send text via broadcast, then restore original IME.
+      // ADBKeyboard goes through Android's InputConnection (same as typing on a real keyboard),
+      // which correctly handles hint text clearing and supports all Unicode characters.
+      await this.typeViaAdbKeyboard(text);
+    } else {
+      // Decide input path for the entire text, not per-segment.
+      const useYadb =
+        strategy === IME_STRATEGY_ALWAYS_YADB ||
+        (strategy === IME_STRATEGY_YADB_FOR_NON_ASCII &&
+          this.shouldUseYadbForText(text));
+
+      if (useYadb) {
+        // yadb handles newlines natively: escapeForShell converts \n (0x0A)
+        // to literal \n (two chars), which yadb interprets back as newline.
+        // Single adb call for the entire text.
+        await this.execYadb(escapeForShell(text));
+      } else {
+        // inputText cannot handle newlines, so split by \n and press Enter between segments.
+        const segments = text.split('\n');
+        for (let i = 0; i < segments.length; i++) {
+          if (segments[i].length > 0) {
+            await adb.inputText(segments[i]);
+          }
+          if (i < segments.length - 1) {
+            await adb.keyevent(66);
+          }
+        }
+      }
+    }
+  }
+
   async keyboardType(
     text: string,
     options?: AndroidDeviceInputOpt,
   ): Promise<void> {
     if (!text) return;
     const adb = await this.getAdb();
-    const IME_STRATEGY =
-      (this.options?.imeStrategy ||
-        globalConfigManager.getEnvConfigValue(MIDSCENE_ANDROID_IME_STRATEGY)) ??
-      IME_STRATEGY_YADB_FOR_NON_ASCII;
     const shouldAutoDismissKeyboard =
       options?.autoDismissKeyboard ?? this.options?.autoDismissKeyboard ?? true;
 
-    // Decide input path for the entire text, not per-segment.
-    const useYadb =
-      IME_STRATEGY === IME_STRATEGY_ALWAYS_YADB ||
-      (IME_STRATEGY === IME_STRATEGY_YADB_FOR_NON_ASCII &&
-        this.shouldUseYadbForText(text));
+    // ----------------------------------------------------------------
+    // Determine effective fallback strategy list.
+    // Priority: explicit inputFallbackStrategies > auto-derive from imeStrategy.
+    // Auto-derive only applies when AndroidAgent has injected inputVerifyFn.
+    // ----------------------------------------------------------------
+    let effectiveFallback: Array<'clipboard' | 'adb-keyboard'> | undefined;
 
-    if (useYadb) {
-      // yadb handles newlines natively: escapeForShell converts \n (0x0A)
-      // to literal \n (two chars), which yadb interprets back as newline.
-      // Single adb call for the entire text.
-      await this.execYadb(escapeForShell(text));
-    } else {
-      // inputText cannot handle newlines, so split by \n and press Enter between segments.
-      const segments = text.split('\n');
-      for (let i = 0; i < segments.length; i++) {
-        if (segments[i].length > 0) {
-          await adb.inputText(segments[i]);
+    if (typeof this.inputVerifyFn === 'function') {
+      if (this.options?.inputFallbackStrategies?.length) {
+        // Explicit list provided — use it as-is
+        effectiveFallback = this.options.inputFallbackStrategies;
+      } else {
+        // Auto-derive from imeStrategy (clipboard/adb-keyboard only).
+        // If imeStrategy is a yadb variant, the user has opted into yadb and
+        // the fallback does not apply.
+        const configuredStrategy =
+          this.options?.imeStrategy ||
+          globalConfigManager.getEnvConfigValue(MIDSCENE_ANDROID_IME_STRATEGY);
+
+        if (
+          !configuredStrategy ||
+          configuredStrategy === IME_STRATEGY_CLIPBOARD
+        ) {
+          // Default or explicit clipboard → clipboard first, adb-keyboard second
+          effectiveFallback = [
+            IME_STRATEGY_CLIPBOARD,
+            IME_STRATEGY_ADB_KEYBOARD,
+          ];
+        } else if (configuredStrategy === IME_STRATEGY_ADB_KEYBOARD) {
+          // Explicit adb-keyboard → adb-keyboard first, clipboard second
+          effectiveFallback = [
+            IME_STRATEGY_ADB_KEYBOARD,
+            IME_STRATEGY_CLIPBOARD,
+          ];
         }
-        if (i < segments.length - 1) {
-          await adb.keyevent(66);
-        }
+        // For 'always-yadb' / 'yadb-for-non-ascii': effectiveFallback remains
+        // undefined → falls through to the original single-strategy path below.
       }
+    }
+
+    if (effectiveFallback?.length) {
+      // ----------------------------------------------------------------
+      // IME fallback mode: try each strategy in order, verify with AI.
+      // ----------------------------------------------------------------
+      for (let i = 0; i < effectiveFallback.length; i++) {
+        const strategy = effectiveFallback[i];
+        const isLast = i === effectiveFallback.length - 1;
+        debugDevice(
+          `[IME fallback] trying strategy: ${strategy} (${i + 1}/${effectiveFallback.length})`,
+        );
+
+        await this._typeWithStrategy(text, strategy, adb);
+
+        if (isLast) {
+          // Last strategy: no verification needed, just proceed
+          debugDevice('[IME fallback] all strategies tried');
+          break;
+        }
+
+        // Wait briefly for the UI to settle before taking the verification screenshot
+        await sleep(300);
+        const success = await this.inputVerifyFn!(text);
+        if (success) {
+          debugDevice(`[IME fallback] strategy '${strategy}' succeeded`);
+          break;
+        }
+
+        debugDevice(
+          `[IME fallback] strategy '${strategy}' failed, clearing field and trying next`,
+        );
+        // Clear the incorrectly typed content before the next attempt
+        await adb.clearTextField(100);
+      }
+    } else {
+      // ----------------------------------------------------------------
+      // Original single-strategy path (no fallback configured or not applicable)
+      // ----------------------------------------------------------------
+      const IME_STRATEGY =
+        (this.options?.imeStrategy ||
+          globalConfigManager.getEnvConfigValue(
+            MIDSCENE_ANDROID_IME_STRATEGY,
+          )) ??
+        IME_STRATEGY_YADB_FOR_NON_ASCII;
+
+      await this._typeWithStrategy(text, IME_STRATEGY, adb);
     }
 
     if (shouldAutoDismissKeyboard === true) {
@@ -1610,8 +1780,9 @@ ${Object.keys(size)
 
     // Use adjusted coordinates
     const { x: adjustedX, y: adjustedY } = await this.adjustCoordinates(x, y);
+    // 单击也是用长按来实现的，这里设置长按时间
     await adb.shell(
-      `input${this.getDisplayArg()} swipe ${adjustedX} ${adjustedY} ${adjustedX} ${adjustedY} 150`,
+      `input${this.getDisplayArg()} swipe ${adjustedX} ${adjustedY} ${adjustedX} ${adjustedY} 50`,
     );
   }
 

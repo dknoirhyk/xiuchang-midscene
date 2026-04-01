@@ -69,6 +69,20 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     // Set the mapping on the device instance
     device.setAppNameMapping(this.appNameMapping);
 
+    // Inject AI-based verification for IME fallback.
+    // When imeStrategy is 'clipboard' or 'adb-keyboard' (or not set), keyboardType
+    // will automatically try both strategies in order and use this function to
+    // verify whether the input succeeded before falling back to the next strategy.
+    device.inputVerifyFn = async (text: string): Promise<boolean> => {
+      try {
+        return await this.aiBoolean(
+          `the currently focused input field contains the text "${text}"`,
+        );
+      } catch {
+        return false;
+      }
+    };
+
     this.back =
       this.createActionWrapper<DeviceActionAndroidBackButton>(
         'AndroidBackButton',
