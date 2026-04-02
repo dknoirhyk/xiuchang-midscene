@@ -2,6 +2,7 @@ import type { ActionParam, ActionReturn, DeviceAction } from '@midscene/core';
 import { type AgentOpt, Agent as PageAgent } from '@midscene/core/agent';
 import { getDebug } from '@midscene/shared/logger';
 import { mergeAndNormalizeAppNameMapping } from '@midscene/shared/utils';
+import { getKnowledgeForPackage } from './app-knowledge';
 import { defaultAppNameMapping } from './appNameMapping';
 import {
   AndroidDevice,
@@ -55,6 +56,11 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
    * User-provided app name to package name mapping
    */
   private appNameMapping: Record<string, string>;
+
+  /**
+   * Cache the last loaded knowledge package name to avoid redundant setAIActContext calls
+   */
+  private lastKnowledgePackageName: string | undefined;
 
   constructor(device: AndroidDevice, opts?: AndroidAgentOpt) {
     super(device, opts);
@@ -114,6 +120,33 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     const action =
       this.wrapActionInActionSpace<DeviceActionRunAdbShell>('RunAdbShell');
     return action({ command });
+  }
+
+  /**
+   * Load app-specific business knowledge for the given package name.
+   * If knowledge is found, it will be injected via setAIActContext so that
+   * all AI methods (aiAct, aiAssert, aiQuery, aiBoolean, etc.) can use it.
+   * Skips if the same package knowledge is already loaded.
+   * @param packageName - The Android package name (e.g. "com.taobao.trip")
+   */
+  loadAppKnowledge(packageName: string): void {
+    if (this.lastKnowledgePackageName === packageName) {
+      debugAgent(
+        'knowledge already loaded for package: %s, skipping',
+        packageName,
+      );
+      return;
+    }
+
+    const knowledge = getKnowledgeForPackage(packageName);
+    if (knowledge) {
+      this.setAIActContext(knowledge);
+      this.lastKnowledgePackageName = packageName;
+      debugAgent('loaded app knowledge for package: %s', packageName);
+    } else {
+      this.lastKnowledgePackageName = packageName;
+      debugAgent('no app knowledge available for package: %s', packageName);
+    }
   }
 
   private createActionWrapper<T extends DeviceAction>(

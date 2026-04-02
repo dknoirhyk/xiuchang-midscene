@@ -7,6 +7,26 @@ import { AndroidDevice } from './device';
 const debug = getDebug('mcp:android-tools');
 
 /**
+ * Parse the foreground app package name from ADB dumpsys output.
+ * Supports both mResumedActivity (older Android) and mTopActivityRecord (newer Android).
+ */
+function parseForegroundPackageName(dumpsysOutput: string): string | null {
+  // Match patterns like: mResumedActivity: ActivityRecord{...  com.taobao.trip/.xxx}
+  // or: mTopActivityRecord=ActivityRecord{...  com.taobao.trip/.xxx}
+  const patterns = [
+    /mResumedActivity.*?\s([a-zA-Z][a-zA-Z0-9_.]*)\//,
+    /mTopActivityRecord.*?\s([a-zA-Z][a-zA-Z0-9_.]*)\//,
+  ];
+  for (const pattern of patterns) {
+    const match = dumpsysOutput.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+/**
  * Android-specific tools manager
  * Extends BaseMidsceneTools to provide Android ADB device connection tools
  */
@@ -30,6 +50,8 @@ export class AndroidMidsceneTools extends BaseMidsceneTools<AndroidAgent> {
     }
 
     if (this.agent) {
+      // Agent already exists, try to detect foreground app and load knowledge
+      await this.detectAndLoadAppKnowledge(this.agent);
       return this.agent;
     }
 
@@ -38,7 +60,31 @@ export class AndroidMidsceneTools extends BaseMidsceneTools<AndroidAgent> {
       autoDismissKeyboard: false,
     });
     this.agent = agent;
+
+    // Detect foreground app and load knowledge for the new agent
+    await this.detectAndLoadAppKnowledge(agent);
+
     return agent;
+  }
+
+  /**
+   * Detect the foreground Android app and load its business knowledge.
+   * Uses ADB to get the currently resumed activity and extract the package name.
+   */
+  private async detectAndLoadAppKnowledge(agent: AndroidAgent): Promise<void> {
+    try {
+      const dumpsysOutput = await agent.runAdbShell(
+        'dumpsys activity activities | grep -E "mResumedActivity|mTopActivityRecord"',
+      );
+      const packageName = parseForegroundPackageName(dumpsysOutput);
+      if (packageName) {
+        agent.loadAppKnowledge(packageName);
+      } else {
+        debug('could not detect foreground app package name');
+      }
+    } catch (error) {
+      debug('failed to detect foreground app for knowledge injection:', error);
+    }
   }
 
   /**
