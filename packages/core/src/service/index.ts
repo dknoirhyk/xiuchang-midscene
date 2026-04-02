@@ -227,6 +227,7 @@ export default class Service {
     pageDescription?: string,
     multimodalPrompt?: TMultimodalPrompt,
     context?: UIContext,
+    actionContext?: string,
   ): Promise<ServiceExtractResult<T>> {
     assert(context, 'context is required for extract');
     assert(
@@ -251,6 +252,7 @@ export default class Service {
         extractOption: opt,
         modelConfig,
         pageDescription,
+        actionContext,
       });
       parseResult = result.parseResult;
       rawResponse = result.rawResponse;

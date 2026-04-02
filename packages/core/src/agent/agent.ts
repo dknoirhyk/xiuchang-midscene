@@ -981,6 +981,8 @@ export class Agent<
       demand,
       modelConfig,
       opt,
+      undefined,
+      this.aiActContext,
     );
     return output as ReturnType;
   }
@@ -998,6 +1000,7 @@ export class Agent<
       modelConfig,
       opt,
       multimodalPrompt,
+      this.aiActContext,
     );
     return output as boolean;
   }
@@ -1015,6 +1018,7 @@ export class Agent<
       modelConfig,
       opt,
       multimodalPrompt,
+      this.aiActContext,
     );
     return output as number;
   }
@@ -1032,6 +1036,7 @@ export class Agent<
       modelConfig,
       opt,
       multimodalPrompt,
+      this.aiActContext,
     );
     return output as string;
   }
@@ -1187,6 +1192,7 @@ export class Agent<
           modelConfig,
           serviceOpt,
           multimodalPrompt,
+          this.aiActContext,
         );
 
       const pass = Boolean(output);
@@ -1247,6 +1253,7 @@ export class Agent<
         checkIntervalMs: opt?.checkIntervalMs || 3 * 1000,
       },
       modelConfig,
+      this.aiActContext,
     );
   }
 

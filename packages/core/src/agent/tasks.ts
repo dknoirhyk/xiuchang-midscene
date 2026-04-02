@@ -545,6 +545,7 @@ export class TaskExecutor {
     modelConfig: IModelConfig,
     opt?: ServiceExtractOption,
     multimodalPrompt?: TMultimodalPrompt,
+    actionContext?: string,
   ) {
     const queryTask: ExecutionTaskInsightQueryApply = {
       type: 'Insight',
@@ -618,6 +619,7 @@ export class TaskExecutor {
             extraPageDescription,
             multimodalPrompt,
             uiContext,
+            actionContext,
           );
         } catch (error) {
           if (error instanceof ServiceError) {
@@ -672,6 +674,7 @@ export class TaskExecutor {
     modelConfig: IModelConfig,
     opt?: ServiceExtractOption,
     multimodalPrompt?: TMultimodalPrompt,
+    actionContext?: string,
   ): Promise<ExecutionResult<T>> {
     const session = this.createExecutionSession(
       taskTitleStr(
@@ -686,6 +689,7 @@ export class TaskExecutor {
       modelConfig,
       opt,
       multimodalPrompt,
+      actionContext,
     );
 
     const runner = session.getRunner();
@@ -710,6 +714,7 @@ export class TaskExecutor {
     assertion: TUserPrompt,
     opt: PlanningActionParamWaitFor,
     modelConfig: IModelConfig,
+    actionContext?: string,
   ): Promise<ExecutionResult<void>> {
     const { textPrompt, multimodalPrompt } = parsePrompt(assertion);
 
@@ -753,6 +758,7 @@ export class TaskExecutor {
         modelConfig,
         serviceExtractOpt,
         multimodalPrompt,
+        actionContext,
       );
 
       const result = (await session.appendAndRun(queryTask)) as

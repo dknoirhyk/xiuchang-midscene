@@ -546,6 +546,7 @@ export async function AiExtractElementInfo<T>(options: {
   pageDescription?: string;
   extractOption?: ServiceExtractOption;
   modelConfig: IModelConfig;
+  actionContext?: string;
 }) {
   const { dataQuery, context, extractOption, multimodalPrompt, modelConfig } =
     options;
@@ -556,6 +557,10 @@ export async function AiExtractElementInfo<T>(options: {
     options.pageDescription || '',
     dataQuery,
   );
+
+  const knowledgePrefix = options.actionContext
+    ? `<high_priority_knowledge>${options.actionContext}</high_priority_knowledge>\n`
+    : '';
 
   const userContent: ChatCompletionUserMessageParam['content'] = [];
 
@@ -571,7 +576,7 @@ export async function AiExtractElementInfo<T>(options: {
 
   userContent.push({
     type: 'text',
-    text: extractDataPromptText,
+    text: `${knowledgePrefix}${extractDataPromptText}`,
   });
 
   const msgs: AIArgs = [
