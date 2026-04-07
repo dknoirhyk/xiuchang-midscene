@@ -1,8 +1,5 @@
-import {
-  AndroidAgent,
-  AndroidDevice,
-  getConnectedDevices,
-} from './packages/android';
+import { AndroidAgent, AndroidDevice } from './packages/android/src';
+import { getConnectedDevices } from './packages/android/src/utils';
 import 'dotenv/config'; // read environment variables from .env file
 
 const sleep = (ms: number | undefined) => new Promise((r) => setTimeout(r, ms));
@@ -19,11 +16,10 @@ Promise.resolve(
 
     // 👀 init Midscene agent
     const agent = new AndroidAgent(page, {
-      aiActContext:
-        'If any location, permission, user agreement, etc. popup, click agree. If login page pops up, close it.',
+      aiActContext: '',
     });
     await page.connect();
-    await agent.aiAct('搜索："杭州"，等待搜索结果出现，校验搜索结果是否和杭州有关');
+    await agent.aiAct('去飞猪创建一个酒店订单，酒店是「杭州西溪湿地亚朵酒店」');
 
     sleep(2000);
   })(),
