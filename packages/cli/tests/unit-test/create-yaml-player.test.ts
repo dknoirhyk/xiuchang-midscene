@@ -26,7 +26,7 @@ vi.mock('@midscene/core/yaml', () => ({
   parseYamlScript: vi.fn(),
 }));
 
-vi.mock('@midscene/android', () => ({
+vi.mock('@xiuchang-midscene/android', () => ({
   agentFromAdbDevice: vi.fn(),
 }));
 
@@ -53,12 +53,12 @@ vi.mock('puppeteer', () => ({
   },
 }));
 
-import { agentFromAdbDevice } from '@midscene/android';
 import { ScriptPlayer, parseYamlScript } from '@midscene/core/yaml';
 import { agentFromWebDriverAgent } from '@midscene/ios';
 import { globalConfigManager } from '@midscene/shared/env';
 import { AgentOverChromeBridge } from '@midscene/web/bridge-mode';
 import { puppeteerAgentForTarget } from '@midscene/web/puppeteer-agent-launcher';
+import { agentFromAdbDevice } from '@xiuchang-midscene/android';
 import { createServer } from 'http-server';
 
 /**

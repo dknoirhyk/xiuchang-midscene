@@ -19,7 +19,7 @@ Promise.resolve(
       aiActContext: '',
     });
     await page.connect();
-    await agent.aiAct('去飞猪创建一个酒店订单，酒店是「杭州西溪湿地亚朵酒店」');
+    await agent.aiAct('去飞猪搜索：上海迪士尼');
 
     sleep(2000);
   })(),

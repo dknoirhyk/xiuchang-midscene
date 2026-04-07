@@ -290,7 +290,9 @@ export async function createYamlPlayer(
       // handle android
       if (typeof clonedYamlScript.android !== 'undefined') {
         const androidTarget = clonedYamlScript.android;
-        const { agentFromAdbDevice } = await import('@midscene/android');
+        const { agentFromAdbDevice } = await import(
+          '@xiuchang-midscene/android'
+        );
         const agent = await agentFromAdbDevice(androidTarget?.deviceId, {
           ...androidTarget, // Pass all Android config options
           ...buildAgentOptions(

@@ -1,11 +1,11 @@
+import type { TestStatus } from '@midscene/core';
+import { ReportMergingTool } from '@midscene/core/report';
+import { sleep } from '@midscene/core/utils';
 import {
   AndroidAgent,
   AndroidDevice,
   getConnectedDevices,
-} from '@midscene/android';
-import type { TestStatus } from '@midscene/core';
-import { ReportMergingTool } from '@midscene/core/report';
-import { sleep } from '@midscene/core/utils';
+} from '@xiuchang-midscene/android';
 import type ADB from 'appium-adb';
 import {
   afterAll,

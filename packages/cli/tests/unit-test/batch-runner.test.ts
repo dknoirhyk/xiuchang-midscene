@@ -64,7 +64,7 @@ vi.mock('@midscene/web/puppeteer-agent-launcher', async (importOriginal) => {
   return { ...original };
 });
 vi.mock('@midscene/web/bridge-mode');
-vi.mock('@midscene/android');
+vi.mock('@xiuchang-midscene/android');
 
 const mockBatchConfig = {
   files: ['file1.yml', 'file2.yml', 'file3.yml'],

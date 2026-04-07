@@ -5,7 +5,7 @@ const currentDevice = { connect: connectMock };
 const getConnectedDevicesWithDetailsMock = vi.fn();
 const findAvailablePortMock = vi.fn(async (port: number) => port);
 
-vi.mock('@midscene/android', () => ({
+vi.mock('@xiuchang-midscene/android', () => ({
   AndroidAgent: vi.fn().mockImplementation((device) => ({
     interface: {
       interfaceType: 'android',

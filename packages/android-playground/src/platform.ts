@@ -1,10 +1,5 @@
 import path from 'node:path';
 import {
-  AndroidAgent,
-  AndroidDevice,
-  getConnectedDevicesWithDetails,
-} from '@midscene/android';
-import {
   type PlaygroundSessionManager,
   type PlaygroundSessionTarget,
   createScrcpyPreviewDescriptor,
@@ -15,6 +10,11 @@ import {
   SCRCPY_SERVER_PORT,
 } from '@midscene/shared/constants';
 import { findAvailablePort } from '@midscene/shared/node';
+import {
+  AndroidAgent,
+  AndroidDevice,
+  getConnectedDevicesWithDetails,
+} from '@xiuchang-midscene/android';
 import type ScrcpyServer from './scrcpy-server';
 
 export interface AndroidPlatformOptions {

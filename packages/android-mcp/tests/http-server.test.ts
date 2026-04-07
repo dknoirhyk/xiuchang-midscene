@@ -1,4 +1,4 @@
-import { AndroidMCPServer } from '@midscene/android/mcp-server';
+import { AndroidMCPServer } from '@xiuchang-midscene/android/mcp-server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 describe('AndroidMCPServer HTTP mode', () => {
