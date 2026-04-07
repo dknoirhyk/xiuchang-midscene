@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.8.6",
-    "@midscene/android": "workspace:*",
+    "@xiuchang-midscene/android": "workspace:*",
     "@midscene/core": "workspace:*",
     "@midscene/playground": "workspace:*",
     "@midscene/shared": "workspace:*",

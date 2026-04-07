@@ -13,7 +13,7 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@midscene/android": "workspace:*",
+    "@xiuchang-midscene/android": "workspace:*",
     "@midscene/core": "workspace:*",
     "@midscene/report": "workspace:*",
     "@midscene/shared": "workspace:*",

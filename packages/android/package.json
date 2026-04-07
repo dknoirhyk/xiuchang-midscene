@@ -1,6 +1,6 @@
 {
   "name": "@xiuchang-midscene/android",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Android automation library for Midscene",
   "keywords": [
     "Android UI automation",
@@ -15,11 +15,7 @@
   "bin": {
     "midscene-android": "./bin/midscene-android"
   },
-  "files": [
-    "bin",
-    "dist",
-    "README.md"
-  ],
+  "files": ["bin", "dist", "README.md"],
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
