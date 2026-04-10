@@ -69,6 +69,9 @@ export function parseXMLPlanningResponse(
     ? parseMarkFinishedIndexes(markSubGoalDone)
     : undefined;
 
+  // Parse <next_page> tag for screenshot knowledge prediction
+  const nextPageRaw = extractXMLTag(xmlString, 'next_page');
+
   // Parse action
   let action: any = null;
   if (actionType && actionType.toLowerCase() !== 'null') {
@@ -102,6 +105,7 @@ export function parseXMLPlanningResponse(
     ...(finalizeSuccess !== undefined ? { finalizeSuccess } : {}),
     ...(updateSubGoals?.length ? { updateSubGoals } : {}),
     ...(markFinishedIndexes?.length ? { markFinishedIndexes } : {}),
+    nextPage: nextPageRaw === 'null' ? null : (nextPageRaw ?? null),
   };
 }
 
@@ -118,6 +122,8 @@ export async function plan(
     imagesIncludeCount?: number;
     deepThink?: DeepThinkOption;
     abortSignal?: AbortSignal;
+    referenceScreenshots?: Array<{ name: string; url: string }>;
+    availablePageIds?: string[];
   },
 ): Promise<PlanningAIResponse> {
   const { context, modelConfig, conversationHistory } = opts;
@@ -155,13 +161,28 @@ export async function plan(
     ? `<high_priority_knowledge>${opts.actionContext}</high_priority_knowledge>\n`
     : '';
 
+  // Build next_page instruction dynamically when availablePageIds are provided
+  let nextPageInstruction = '';
+  if (opts.availablePageIds?.length) {
+    const pageIdList = opts.availablePageIds.join(', ');
+    nextPageInstruction = `\n<next_page_instruction>
+After determining the next action, predict which page will be shown after this action completes.
+Output the predicted page identifier in the <next_page> tag.
+Available page identifiers: ${pageIdList}.
+If you cannot predict, output <next_page>null</next_page>.
+
+If a reference annotated screenshot is provided, it shows the expected layout of the current page.
+If the current screenshot differs significantly from the reference (e.g., unexpected popup, wrong page, loading error), ignore the reference screenshot and judge based on the current screenshot and text knowledge. Correct your next_page prediction accordingly.
+</next_page_instruction>`;
+  }
+
   const instruction: ChatCompletionMessageParam[] = [
     {
       role: 'user',
       content: [
         {
           type: 'text',
-          text: `${actionContext}<user_instruction>${userInstruction}</user_instruction>`,
+          text: `${actionContext}${nextPageInstruction}<user_instruction>${userInstruction}</user_instruction>`,
         },
       ],
     },
@@ -180,6 +201,25 @@ export async function plan(
   // Build memories text to include in the message
   const memoriesText = conversationHistory.memoriesToText();
   const memoriesSection = memoriesText ? `\n\n${memoriesText}` : '';
+
+  // Inject reference annotated screenshots before the current screenshot
+  // so the model sees: reference (low detail) → current state (high detail)
+  if (opts.referenceScreenshots?.length) {
+    const refMessage: ChatCompletionMessageParam = {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `The following ${opts.referenceScreenshots.length > 1 ? `${opts.referenceScreenshots.length} images are` : 'image is'} annotated reference screenshot(s) for the expected current page. They show the page layout and element positions for reference only — they do NOT represent the current screen state. If multiple images are provided, they represent different states/variants of the same page.`,
+        },
+        ...opts.referenceScreenshots.map((img) => ({
+          type: 'image_url' as const,
+          image_url: { url: img.url, detail: 'low' as const },
+        })),
+      ],
+    };
+    conversationHistory.append(refMessage);
+  }
 
   if (conversationHistory.pendingFeedbackMessage) {
     latestFeedbackMessage = {
@@ -341,6 +381,9 @@ export async function plan(
     if (planFromAI.memory) {
       conversationHistory.appendMemory(planFromAI.memory);
     }
+
+    // Update next page prediction for screenshot knowledge injection
+    conversationHistory.setNextPagePrediction(planFromAI.nextPage ?? null);
 
     conversationHistory.append({
       role: 'assistant',

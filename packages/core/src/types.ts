@@ -287,6 +287,7 @@ export interface RawResponsePlanningAIResponse {
   finalizeSuccess?: boolean;
   updateSubGoals?: SubGoal[];
   markFinishedIndexes?: number[];
+  nextPage?: string | null;
 }
 
 export interface PlanningAIResponse
@@ -677,6 +678,7 @@ export type ExecutionTaskPlanningApply = ExecutionTaskApply<
   {
     userInstruction: string;
     aiActContext?: string;
+    referenceScreenshots?: Array<{ name: string; url: string }>;
   },
   PlanningAIResponse
 >;

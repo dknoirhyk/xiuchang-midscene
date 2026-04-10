@@ -207,6 +207,22 @@ export class Agent<
   }
 
   /**
+   * Provider for reference annotated screenshots used in planning.
+   * When set, called before each planning round with the predicted page ID.
+   * Subclasses (e.g. AndroidAgent) can set this to inject screenshot knowledge.
+   */
+  protected referenceScreenshotProvider?:
+    | ((pageId: string | null) => Promise<Array<{ name: string; url: string }>>)
+    | undefined;
+
+  /**
+   * Available page identifiers for next_page prediction.
+   * When set, the model will output a <next_page> tag to predict the next page.
+   * Subclasses (e.g. AndroidAgent) can set this to enable screenshot knowledge.
+   */
+  protected availablePageIds?: string[] | undefined;
+
+  /**
    * Flag to track if VL model warning has been shown
    */
   private hasWarnedNonVLModel = false;
@@ -931,6 +947,8 @@ export class Agent<
         fileChooserAccept,
         deepLocate,
         abortSignal,
+        this.referenceScreenshotProvider,
+        this.availablePageIds,
       );
 
       // update cache

@@ -245,6 +245,10 @@ export class TaskExecutor {
     fileChooserAccept?: string[],
     deepLocate?: boolean,
     abortSignal?: AbortSignal,
+    referenceScreenshotProvider?: (
+      pageId: string | null,
+    ) => Promise<Array<{ name: string; url: string }>>,
+    availablePageIds?: string[],
   ): Promise<
     ExecutionResult<
       | {
@@ -267,6 +271,8 @@ export class TaskExecutor {
         deepThink,
         deepLocate,
         abortSignal,
+        referenceScreenshotProvider,
+        availablePageIds,
       );
     });
   }
@@ -283,6 +289,10 @@ export class TaskExecutor {
     deepThink?: DeepThinkOption,
     deepLocate?: boolean,
     abortSignal?: AbortSignal,
+    referenceScreenshotProvider?: (
+      pageId: string | null,
+    ) => Promise<Array<{ name: string; url: string }>>,
+    availablePageIds?: string[],
   ): Promise<
     ExecutionResult<
       | {
@@ -365,6 +375,20 @@ export class TaskExecutor {
             let planResult: Awaited<ReturnType<typeof planImpl>>;
             try {
               setTimingFieldOnce(timing, 'callAiStart');
+
+              // Resolve reference screenshots for this planning round
+              const referenceScreenshots = referenceScreenshotProvider
+                ? await referenceScreenshotProvider(
+                    conversationHistory.nextPagePrediction,
+                  )
+                : undefined;
+
+              // Persist reference screenshots in task param for report visibility
+              if (referenceScreenshots?.length) {
+                (executorContext.task.param as any).referenceScreenshots =
+                  referenceScreenshots;
+              }
+
               planResult = await planImpl(param.userInstruction, {
                 context: uiContext,
                 actionContext: param.aiActContext,
@@ -376,6 +400,8 @@ export class TaskExecutor {
                 imagesIncludeCount,
                 deepThink,
                 abortSignal,
+                referenceScreenshots,
+                availablePageIds,
               });
             } catch (planError) {
               if (planError instanceof AIResponseParseError) {

@@ -10,6 +10,7 @@ export class ConversationHistory {
   private subGoals: SubGoal[] = [];
   private memories: string[] = [];
   private historicalLogs: string[] = [];
+  private _nextPagePrediction: string | null = null;
 
   public pendingFeedbackMessage: string;
 
@@ -42,6 +43,7 @@ export class ConversationHistory {
     this.memories.length = 0;
     this.subGoals.length = 0;
     this.historicalLogs.length = 0;
+    this._nextPagePrediction = null;
     this.pendingFeedbackMessage = '';
   }
 
@@ -331,6 +333,24 @@ export class ConversationHistory {
    */
   clearMemories(): void {
     this.memories.length = 0;
+  }
+
+  // Next page prediction management (used for screenshot knowledge injection)
+
+  /**
+   * Get the predicted next page identifier from the previous planning round.
+   * Used to determine which annotated reference screenshots to inject.
+   */
+  get nextPagePrediction(): string | null {
+    return this._nextPagePrediction;
+  }
+
+  /**
+   * Update the next page prediction after a planning round completes.
+   * @param pageId - The predicted page identifier, or null if unknown
+   */
+  setNextPagePrediction(pageId: string | null): void {
+    this._nextPagePrediction = pageId;
   }
 
   /**
