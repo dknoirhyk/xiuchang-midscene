@@ -245,6 +245,9 @@ const DetailSide = (): JSX.Element => {
   const aiActContextValue = (task as ExecutionTaskPlanningApply)?.param
     ?.aiActContext;
 
+  const referenceScreenshotsValue = (task as ExecutionTaskPlanningApply)?.param
+    ?.referenceScreenshots;
+
   const formatStageCostLine = (
     label: string,
     start?: number,
@@ -405,6 +408,41 @@ const DetailSide = (): JSX.Element => {
             {
               key: 'act context',
               content: aiActContextValue,
+            },
+          ]
+        : []),
+      ...(referenceScreenshotsValue?.length
+        ? [
+            {
+              key: 'reference screenshots',
+              content: (
+                <div className="reference-screenshots">
+                  {referenceScreenshotsValue.map(
+                    (img: { name: string; url: string }, idx: number) => (
+                      <div key={idx} style={{ marginBottom: '8px' }}>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          {img.name}
+                        </div>
+                        <img
+                          src={img.url}
+                          alt={img.name}
+                          style={{
+                            maxWidth: '200px',
+                            border: '1px solid #e8e8e8',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      </div>
+                    ),
+                  )}
+                </div>
+              ),
             },
           ]
         : []),
