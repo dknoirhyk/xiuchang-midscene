@@ -1,8 +1,15 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { ActionParam, ActionReturn, DeviceAction } from '@midscene/core';
 import { type AgentOpt, Agent as PageAgent } from '@midscene/core/agent';
 import { getDebug } from '@midscene/shared/logger';
 import { mergeAndNormalizeAppNameMapping } from '@midscene/shared/utils';
-import { getKnowledgeForPackage } from './app-knowledge';
+import {
+  getDefaultPageForPackage,
+  getKnowledgeForPackage,
+  getPageIdsForPackage,
+  getScreenshotsForPage,
+} from './app-knowledge';
 import { defaultAppNameMapping } from './appNameMapping';
 import {
   AndroidDevice,
@@ -126,6 +133,7 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
    * Load app-specific business knowledge for the given package name.
    * If knowledge is found, it will be injected via setAIActContext so that
    * all AI methods (aiAct, aiAssert, aiQuery, aiBoolean, etc.) can use it.
+   * Also sets up screenshot knowledge provider for planning-time injection.
    * Skips if the same package knowledge is already loaded.
    * @param packageName - The Android package name (e.g. "com.taobao.trip")
    */
@@ -141,11 +149,83 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     const knowledge = getKnowledgeForPackage(packageName);
     if (knowledge) {
       this.setAIActContext(knowledge);
-      this.lastKnowledgePackageName = packageName;
       debugAgent('loaded app knowledge for package: %s', packageName);
     } else {
-      this.lastKnowledgePackageName = packageName;
       debugAgent('no app knowledge available for package: %s', packageName);
+    }
+
+    // Set up screenshot knowledge provider for planning-time injection
+    const pageIds = getPageIdsForPackage(packageName);
+    if (pageIds.length > 0) {
+      this.availablePageIds = pageIds;
+      this.referenceScreenshotProvider = async (
+        pageId: string | null,
+      ): Promise<Array<{ name: string; url: string }>> => {
+        // Cold start: use default page when no prediction is available
+        const effectivePageId = pageId ?? getDefaultPageForPackage(packageName);
+        if (!effectivePageId) return [];
+        return this.resolveReferenceScreenshots(effectivePageId, packageName);
+      };
+      debugAgent(
+        'screenshot knowledge provider set for package: %s (%d pages)',
+        packageName,
+        pageIds.length,
+      );
+    } else {
+      this.availablePageIds = undefined;
+      this.referenceScreenshotProvider = undefined;
+    }
+
+    this.lastKnowledgePackageName = packageName;
+  }
+
+  /**
+   * Resolve annotated reference screenshots for a given page to base64 data URLs.
+   * @param pageId - The page identifier
+   * @param packageName - The Android package name
+   * @returns Array of base64 image data objects, empty if no screenshots found
+   */
+  private async resolveReferenceScreenshots(
+    pageId: string,
+    packageName: string,
+  ): Promise<Array<{ name: string; url: string }>> {
+    const screenshotPaths = getScreenshotsForPage(packageName, pageId);
+    if (!screenshotPaths.length) return [];
+
+    return Promise.all(
+      screenshotPaths.map(async (p, i) => {
+        const base64 = await fs.promises.readFile(p, { encoding: 'base64' });
+        const ext = path.extname(p).slice(1) || 'jpeg';
+        return {
+          name: `${pageId}-${i + 1}`,
+          url: `data:image/${ext};base64,${base64}`,
+        };
+      }),
+    );
+  }
+
+  /**
+   * Detect the foreground Android app and automatically load its business knowledge.
+   * Uses ADB to get the currently resumed activity and extract the package name,
+   * then calls loadAppKnowledge() with the detected package name.
+   * This is safe to call repeatedly — loadAppKnowledge() skips if already loaded.
+   */
+  async detectAndLoadAppKnowledge(): Promise<void> {
+    try {
+      const dumpsysOutput = await this.runAdbShell(
+        'dumpsys activity activities | grep -E "mResumedActivity|mTopActivityRecord"',
+      );
+      const packageName = parseForegroundPackageName(dumpsysOutput);
+      if (packageName) {
+        this.loadAppKnowledge(packageName);
+      } else {
+        debugAgent('could not detect foreground app package name');
+      }
+    } catch (error) {
+      debugAgent(
+        'failed to detect foreground app for knowledge injection:',
+        error,
+      );
     }
   }
 
@@ -156,6 +236,24 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     return ((...args: ActionArgs<T>) =>
       action(args[0] as ActionParam<T>)) as WrappedAction<T>;
   }
+}
+
+/**
+ * Parse the foreground app package name from ADB dumpsys output.
+ * Supports both mResumedActivity (older Android) and mTopActivityRecord (newer Android).
+ */
+function parseForegroundPackageName(dumpsysOutput: string): string | null {
+  const patterns = [
+    /mResumedActivity.*?\s([a-zA-Z][a-zA-Z0-9_.]*)\//,
+    /mTopActivityRecord.*?\s([a-zA-Z][a-zA-Z0-9_.]*)\//,
+  ];
+  for (const pattern of patterns) {
+    const match = dumpsysOutput.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return null;
 }
 
 export async function agentFromAdbDevice(
@@ -184,5 +282,10 @@ export async function agentFromAdbDevice(
 
   await device.connect();
 
-  return new AndroidAgent(device, opts);
+  const agent = new AndroidAgent(device, opts);
+
+  // Auto-detect foreground app and load knowledge (text + screenshots)
+  await agent.detectAndLoadAppKnowledge();
+
+  return agent;
 }
