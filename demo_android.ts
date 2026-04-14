@@ -13,8 +13,9 @@ Promise.resolve(
       // imeStrategy: 'adb-keyboard',
     });
 
-    await agent.aiAct('去猪搜搜索杭州，结果页不能为空');
+    await agent.aiAct('在猪搜搜索：杭州');
 
-    sleep(2000);
+    // 必须调用 destroy() 以完成报告最终化（含 OSS 上传）
+    await agent.destroy();
   })(),
 );
