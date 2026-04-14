@@ -2,26 +2,25 @@ import { useTheme } from '../../hooks/useTheme';
 import './index.less';
 
 export const LogoUrl =
-  'https://lf3-static.bytednsdoc.com/obj/eden-cn/vhaeh7vhabf/Midscene.png';
+  'https://gw.alicdn.com/imgextra/i2/O1CN01BXITpC1ID0dHakqfm_!!6000000000858-2-tps-498-501.png';
 
-const LogoUrlLight =
-  'https://lf3-static.bytednsdoc.com/obj/eden-cn/nupipfups/Midscene/midscene_with_text_light.png';
-const LogoUrlDark =
-  'https://lf3-static.bytednsdoc.com/obj/eden-cn/nupipfups/Midscene/midscene_with_text_dark.png';
+const LogoIconUrl =
+  'https://gw.alicdn.com/imgextra/i2/O1CN01BXITpC1ID0dHakqfm_!!6000000000858-2-tps-498-501.png';
 
 export const Logo = ({ hideLogo = false }: { hideLogo?: boolean }) => {
-  const { isDarkMode } = useTheme();
-
   if (hideLogo) {
     return null;
   }
 
-  const logoSrc = isDarkMode ? LogoUrlDark : LogoUrlLight;
-
   return (
     <div className="logo">
-      <a href="https://midscenejs.com/" target="_blank" rel="noreferrer">
-        <img alt="Midscene_logo" src={logoSrc} />
+      <a
+        href="https://fl-auto-test.fc.alibaba-inc.com/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <img alt="飞碟报告" src={LogoIconUrl} />
+        <span className="logo-text">飞碟报告</span>
       </a>
     </div>
   );

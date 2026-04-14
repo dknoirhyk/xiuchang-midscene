@@ -755,7 +755,7 @@ const Sidebar = (props: SidebarProps = {}): JSX.Element => {
           <span className="tip-text">
             How to insert a custom log entry ?{' '}
             <a
-              href="https://midscenejs.com/api#agentlogscreenshot"
+              href="https://fl-auto-test.fc.alibaba-inc.com/"
               target="_blank"
               rel="noopener noreferrer"
             >

@@ -15,8 +15,6 @@ import { Blackboard, Player } from '@midscene/visualizer';
 import { Segmented } from 'antd';
 import { useEffect, useState } from 'react';
 import { fullTimeStrWithMilliseconds } from '../../../../../packages/visualizer/src/utils';
-import OpenInPlayground from '../open-in-playground';
-
 const ScreenshotDisplay = (props: {
   title: string;
   img?: string;
@@ -285,10 +283,6 @@ const DetailPanel = (): JSX.Element => {
           onChange={(value: any) => {
             setViewType(value);
           }}
-        />
-
-        <OpenInPlayground
-          context={(activeTask as ExecutionTaskPlanning)?.uiContext}
         />
       </div>
       <div className="detail-content">{content}</div>

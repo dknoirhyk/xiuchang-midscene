@@ -1,7 +1,6 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
 import type { UIContext } from '@midscene/core';
 import { staticAgentFromContext } from '@midscene/visualizer';
-import type { WebUIContext } from '@midscene/web';
 import {
   Button,
   ConfigProvider,
@@ -72,7 +71,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
     toolContent = (
       <StandardPlayground
         getAgent={() => {
-          return staticAgentFromContext(context as WebUIContext);
+          return staticAgentFromContext(context as UIContext);
         }}
         dryMode={true}
         hideLogo={true}
@@ -136,6 +135,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
         placement="right"
         onClose={handleClose}
         open={isDrawerVisible}
+        destroyOnClose
         width="90%"
         styles={{
           header: { padding: '0 16px' },
@@ -143,7 +143,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
         }}
         className="playground-drawer"
       >
-        {toolContent}
+        {isDrawerVisible ? toolContent : null}
       </Drawer>
     </>
   );
