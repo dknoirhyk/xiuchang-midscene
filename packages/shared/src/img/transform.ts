@@ -439,6 +439,47 @@ export const parseBase64 = (
 };
 
 /**
+ * Convert a base64 image to JPEG with specified quality (no resize).
+ * If the image is already JPEG, re-encodes at the given quality.
+ *
+ * @param inputBase64 - Full data-URI base64 string (e.g. "data:image/png;base64,...")
+ * @param quality - JPEG quality 1-100
+ * @returns JPEG data-URI base64 string
+ */
+export async function convertToJpegBase64(
+  inputBase64: string,
+  quality: number,
+): Promise<string> {
+  const { body } = parseBase64(inputBase64);
+  const buffer = Buffer.from(body, 'base64');
+
+  if (ifInNode) {
+    try {
+      const Sharp = await getSharp();
+      const jpegBuffer = await Sharp(buffer).jpeg({ quality }).toBuffer();
+      return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+    } catch (error) {
+      imgDebug(
+        'Sharp failed for JPEG conversion, falling back to Photon:',
+        error,
+      );
+    }
+  }
+
+  // Fallback: Photon / Canvas
+  const { PhotonImage } = await getPhoton();
+  const inputBytes = new Uint8Array(buffer);
+  const bytesliceResult = PhotonImage.new_from_byteslice(inputBytes);
+  const inputImage =
+    bytesliceResult instanceof Promise
+      ? await bytesliceResult
+      : bytesliceResult;
+  const outputBytes = inputImage.get_bytes_jpeg(quality);
+  inputImage.free();
+  return `data:image/jpeg;base64,${Buffer.from(outputBytes).toString('base64')}`;
+}
+
+/**
  * Scales an image by a specified factor using Sharp or Photon
  * @param imageBase64 - Base64 encoded image
  * @param scale - Scale factor (e.g., 2 for 2x, 1.5 for 1.5x)

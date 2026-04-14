@@ -355,6 +355,29 @@ class MidsceneReporter implements Reporter {
       console.log(`[Midscene] Example: npx serve ${reportBaseDir}`);
     }
 
+    // Upload merged single-html report to OSS if enabled
+    try {
+      const { getOSSConfigFromEnv, uploadReportToOSS } = await import(
+        '@midscene/shared/oss'
+      );
+      const ossConfig = await getOSSConfigFromEnv();
+      if (
+        ossConfig &&
+        this.mode === 'merged' &&
+        this.outputFormat === 'single-html'
+      ) {
+        const reportPath = this.getReportPath();
+        const result = await uploadReportToOSS(reportPath, ossConfig);
+        if (result.success) {
+          console.log(`[Midscene] Online report: ${result.url}`);
+        } else {
+          console.warn(`[Midscene] OSS upload failed: ${result.error}`);
+        }
+      }
+    } catch {
+      // Upload failure must never affect main flow
+    }
+
     // Clean up any remaining temp files that weren't deleted in onTestEnd
     if (this.tempFiles.size > 0) {
       console.log(

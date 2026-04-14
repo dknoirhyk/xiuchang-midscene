@@ -7,6 +7,7 @@ export {
 export {
   resizeAndConvertImgBuffer,
   resizeImgBase64,
+  convertToJpegBase64,
   zoomForGPT4o,
   saveBase64Image,
   paddingToMatchBlockByBase64,

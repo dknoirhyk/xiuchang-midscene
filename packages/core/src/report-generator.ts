@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { getMidsceneRunSubDir } from '@midscene/shared/common';
 import {
@@ -142,6 +142,16 @@ export class ReportGenerator implements IReportGenerator {
     }
 
     this.printReportPath('finalized');
+
+    // Deduplicate: remove redundant dump tags, keep only the last one
+    this.deduplicateDumps();
+
+    // Compress screenshots to JPEG if configured
+    await this.compressScreenshots();
+
+    // Upload to OSS if enabled (try-catch: never block main flow)
+    await this.uploadToOSSIfEnabled();
+
     return this.reportPath;
   }
 
@@ -160,6 +170,202 @@ export class ReportGenerator implements IReportGenerator {
       );
     } else {
       logMsg(`Midscene - report ${verb}: ${this.reportPath}`);
+    }
+  }
+
+  /**
+   * Remove redundant dump tags from the finalized report.
+   * Each onExecutionUpdate appends a full dump tag, but only the last one
+   * is needed (the frontend deduplicates anyway). Removing the earlier ones
+   * drastically reduces file size — typically saving 50%+ for long sessions.
+   */
+  private deduplicateDumps(): void {
+    if (this.screenshotMode !== 'inline') return;
+    if (!this.initialized) return;
+
+    try {
+      const content = readFileSync(this.reportPath, 'utf-8');
+      const sizeBefore = Buffer.byteLength(content, 'utf-8');
+
+      // Walk through all top-level <script>…</script> pairs to find real
+      // dump tags. We cannot simply use indexOf('<script type="midscene_web_dump"')
+      // because that pattern may appear INSIDE the escaped JSON content of
+      // other dump tags. By scanning tag-by-tag and relying on the fact that
+      // </script inside content is always escaped to <\/script, the first
+      // literal </script> after an opening <script is always the real
+      // closing tag.
+      const dumpType = 'midscene_web_dump';
+      const positions: Array<{ start: number; end: number }> = [];
+      let pos = 0;
+
+      while (pos < content.length) {
+        const scriptStart = content.indexOf('<script', pos);
+        if (scriptStart === -1) break;
+
+        const openEnd = content.indexOf('>', scriptStart);
+        if (openEnd === -1) break;
+
+        const openTag = content.slice(scriptStart, openEnd + 1);
+
+        // Find the matching </script> — always the real closing tag
+        // because inner </script is escaped to <\/script by escapeContent()
+        const closeIdx = content.indexOf('</script>', openEnd);
+        if (closeIdx === -1) break;
+
+        const tagEnd = closeIdx + '</script>'.length;
+
+        if (openTag.includes(`type="${dumpType}"`)) {
+          positions.push({ start: scriptStart, end: tagEnd });
+        }
+
+        pos = tagEnd;
+      }
+
+      // Nothing to deduplicate
+      if (positions.length <= 1) return;
+
+      // Rebuild content: keep everything except non-last dump tags
+      const parts: string[] = [];
+      let lastEnd = 0;
+
+      for (let i = 0; i < positions.length - 1; i++) {
+        // Also consume the preceding newline appended by writeInlineExecution
+        let start = positions[i].start;
+        if (start > 0 && content[start - 1] === '\n') {
+          start--;
+        }
+        parts.push(content.slice(lastEnd, start));
+        lastEnd = positions[i].end;
+      }
+      parts.push(content.slice(lastEnd));
+
+      const newContent = parts.join('');
+      writeFileSync(this.reportPath, newContent);
+
+      const sizeAfter = Buffer.byteLength(newContent, 'utf-8');
+      const savedMB = (sizeBefore - sizeAfter) / 1024 / 1024;
+
+      if (savedMB > 0.1) {
+        logMsg(
+          `Midscene - report optimized: removed ${positions.length - 1} redundant dumps, saved ${savedMB.toFixed(1)} MB`,
+        );
+      }
+    } catch {
+      // Optimization failure must never block the main flow
+    }
+  }
+
+  /**
+   * Compress inline screenshots from PNG to JPEG when MIDSCENE_REPORT_JPEG_QUALITY
+   * is set (1-100). Runs during finalize(), after dedup and before OSS upload.
+   * This only affects the report file — AI model still receives original quality.
+   */
+  private async compressScreenshots(): Promise<void> {
+    if (this.screenshotMode !== 'inline') return;
+    if (!this.initialized) return;
+
+    const qualityStr = process.env.MIDSCENE_REPORT_JPEG_QUALITY;
+    if (!qualityStr) return;
+
+    const quality = Number.parseInt(qualityStr, 10);
+    if (Number.isNaN(quality) || quality < 1 || quality > 100) return;
+
+    try {
+      const { convertToJpegBase64 } = await import('@midscene/shared/img');
+
+      let content = readFileSync(this.reportPath, 'utf-8');
+      const sizeBefore = Buffer.byteLength(content, 'utf-8');
+
+      // Walk through top-level <script> tags to find image tags
+      const imageType = 'midscene-image';
+      const replacements: Array<{
+        start: number;
+        end: number;
+        newTag: string;
+      }> = [];
+      let pos = 0;
+
+      while (pos < content.length) {
+        const scriptStart = content.indexOf('<script', pos);
+        if (scriptStart === -1) break;
+
+        const openEnd = content.indexOf('>', scriptStart);
+        if (openEnd === -1) break;
+
+        const openTag = content.slice(scriptStart, openEnd + 1);
+        const closeIdx = content.indexOf('</script>', openEnd);
+        if (closeIdx === -1) break;
+
+        const tagEnd = closeIdx + '</script>'.length;
+
+        if (openTag.includes(`type="${imageType}"`)) {
+          const base64Content = content.slice(openEnd + 1, closeIdx);
+          // Only compress if it's a PNG (not already JPEG)
+          if (base64Content.includes('image/png')) {
+            replacements.push({
+              start: openEnd + 1,
+              end: closeIdx,
+              newTag: base64Content,
+            });
+          }
+        }
+
+        pos = tagEnd;
+      }
+
+      if (replacements.length === 0) return;
+
+      // Convert all PNGs to JPEG in parallel
+      const converted = await Promise.all(
+        replacements.map(async (r) => {
+          // Content is HTML-escaped by escapeContent(); it only escapes </script
+          // The base64 data URI itself doesn't contain </script, so it's safe as-is
+          const jpegBase64 = await convertToJpegBase64(r.newTag, quality);
+          return { ...r, newTag: jpegBase64 };
+        }),
+      );
+
+      // Rebuild content with compressed images (process in reverse to keep positions valid)
+      const sortedDesc = [...converted].sort((a, b) => b.start - a.start);
+      for (const { start, end, newTag } of sortedDesc) {
+        content = content.slice(0, start) + newTag + content.slice(end);
+      }
+
+      writeFileSync(this.reportPath, content);
+
+      const sizeAfter = Buffer.byteLength(content, 'utf-8');
+      const savedMB = (sizeBefore - sizeAfter) / 1024 / 1024;
+
+      if (savedMB > 0.1) {
+        logMsg(
+          `Midscene - screenshots compressed: ${replacements.length} PNG → JPEG (quality=${quality}), saved ${savedMB.toFixed(1)} MB`,
+        );
+      }
+    } catch {
+      // Compression failure must never block the main flow
+    }
+  }
+
+  private async uploadToOSSIfEnabled(): Promise<void> {
+    try {
+      // Dynamic import to avoid loading ali-oss when OSS is not enabled
+      const { getOSSConfigFromEnv, uploadReportToOSS } = await import(
+        '@midscene/shared/oss'
+      );
+      const ossConfig = await getOSSConfigFromEnv();
+      if (!ossConfig) return;
+
+      // Only upload single-html mode reports
+      if (this.screenshotMode !== 'inline') return;
+
+      const result = await uploadReportToOSS(this.reportPath, ossConfig);
+      if (result.success) {
+        logMsg(`Midscene - online report: ${result.url}`);
+      } else {
+        logMsg(`Midscene - OSS upload failed: ${result.error}`);
+      }
+    } catch {
+      // Upload failure must never affect main flow
     }
   }
 
