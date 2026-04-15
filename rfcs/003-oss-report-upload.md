@@ -37,8 +37,8 @@
 
 输出格式示例：
 ```
-Midscene - report finalized: /path/to/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
-Midscene - report file updated: /path/to/midscene_run/report/playwright-merged-xxx.html
+report finalized: /path/to/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
+report file updated: /path/to/midscene_run/report/playwright-merged-xxx.html
 ```
 
 ## 凭证方案：STS 临时凭证
@@ -98,7 +98,7 @@ def get_token_from_ufo():
 | `MIDSCENE_OSS_REGION` | string | 否 | OSS 区域，默认 `oss-cn-beijing`。可被 Token Service 返回值覆盖 |
 | `MIDSCENE_OSS_BUCKET` | string | 否 | Bucket 名称，默认 `xrayandroid` |
 | `MIDSCENE_OSS_ENDPOINT` | string | 否 | 自定义 Endpoint，如 `oss-cn-beijing.aliyuncs.com` |
-| `MIDSCENE_OSS_PREFIX` | string | 否 | 上传路径前缀，默认 `midscene-reports/` |
+| `MIDSCENE_OSS_PREFIX` | string | 否 | 上传路径前缀，默认 `report/` |
 | `MIDSCENE_OSS_DOMAIN` | string | 否 | 自定义访问域名。如不设置使用 Bucket 默认域名拼接 |
 | `MIDSCENE_REPORT_JPEG_QUALITY` | number (1-100) | 否 | 截图 JPEG 压缩质量。设置后自动将报告中的 PNG 截图转为 JPEG，推荐值 80。不设置则保持原始 PNG |
 
@@ -139,7 +139,7 @@ export interface OSSUploadConfig {
   region: string;           // e.g. 'oss-cn-beijing'
   bucket: string;           // e.g. 'xrayandroid'
   endpoint?: string;        // e.g. 'oss-cn-beijing.aliyuncs.com'
-  prefix?: string;          // e.g. 'midscene-reports/'
+  prefix?: string;          // e.g. 'report/'
   customDomain?: string;    // e.g. 'https://your-domain.com'
 }
 
@@ -235,7 +235,7 @@ export async function getOSSConfigFromEnv(): Promise<OSSUploadConfig | null> {
     region: process.env.MIDSCENE_OSS_REGION || stsResult.region || 'oss-cn-beijing',
     bucket: process.env.MIDSCENE_OSS_BUCKET || 'xrayandroid',
     endpoint: process.env.MIDSCENE_OSS_ENDPOINT,
-    prefix: process.env.MIDSCENE_OSS_PREFIX || 'midscene-reports/',
+    prefix: process.env.MIDSCENE_OSS_PREFIX || 'report/',
     customDomain: process.env.MIDSCENE_OSS_DOMAIN,
   };
 }
@@ -369,8 +369,8 @@ npx tsx packages/shared/src/oss/demo.ts ./midscene_run/report/xxx.html
 #    ✓ 凭证获取成功 (region=oss-cn-beijing, bucket=xrayandroid)
 # 2. 上传文件: ./midscene_run/report/xxx.html
 #    ✓ 上传成功!
-#    OSS 路径: midscene-reports/xxx          ← 注意：无 .html 后缀
-#    在线地址: https://xrayandroid.oss-cn-beijing.aliyuncs.com/midscene-reports/xxx
+#    OSS 路径: report/xxx          ← 注意：无 .html 后缀
+#    在线地址: https://xrayandroid.oss-cn-beijing.aliyuncs.com/report/xxx
 #
 # 3. 请在浏览器中打开以上链接，验证是否可以直接预览（而非下载）
 
@@ -436,9 +436,9 @@ private async uploadToOSSIfEnabled(): Promise<void> {
 
     const result = await uploadReportToOSS(this.reportPath, ossConfig);
     if (result.success) {
-      logMsg(`Midscene - online report: ${result.url}`);
+      logMsg(`online report: ${result.url}`);
     } else {
-      logMsg(`Midscene - OSS upload failed: ${result.error}`);
+      logMsg(`OSS upload failed: ${result.error}`);
     }
   } catch {
     // 上传失败不影响主流程
@@ -486,12 +486,12 @@ async onEnd() {
       const reportPath = this.getReportPath();
       const result = await uploadReportToOSS(reportPath, ossConfig);
       if (result.success) {
-        console.log(`[Midscene] Online report: ${result.url}`);
+        console.log(`online report: ${result.url}`);
       }
     }
   } catch (e) {
     // 上传失败不影响主流程
-    console.warn(`[Midscene] OSS upload failed: ${e}`);
+    console.warn(`OSS upload failed: ${e}`);
   }
 }
 ```
@@ -501,10 +501,12 @@ async onEnd() {
 启用 OSS 上传后，控制台输出示例：
 
 ```
-Midscene - report will be generated at: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
-Midscene - report generated: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
-Midscene - report finalized: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
-Midscene - online report: https://xrayandroid.oss-cn-beijing.aliyuncs.com/midscene-reports/web-2025-04-13_10-30-00-abcd1234
+report will be generated at: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
+report generated: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
+report finalized: /Users/xxx/midscene_run/report/web-2025-04-13_10-30-00-abcd1234.html
+report optimized: removed 55 redundant dumps, saved 41.4 MB
+screenshots compressed: 14 PNG → JPEG (quality=80), saved 19.2 MB
+online report: https://xrayandroid.oss-cn-beijing.aliyuncs.com/report/web-2025-04-13_10-30-00-abcd1234
 ```
 
 > 注意：在线地址无 `.html` 后缀，但浏览器通过 Content-Type 仍会按 HTML 渲染。
@@ -531,7 +533,7 @@ Midscene - online report: https://xrayandroid.oss-cn-beijing.aliyuncs.com/midsce
 
 ```
 xrayandroid/
-  midscene-reports/                     ← MIDSCENE_OSS_PREFIX（默认）
+  report/                                     ← MIDSCENE_OSS_PREFIX（默认）
     web-2025-04-13_10-30-00-abcd1234             ← 无 .html 后缀（默认域名）
     playwright-merged-2025-04-13_11-00-00-efgh5678
     ...
@@ -559,8 +561,8 @@ xrayandroid/
 
 | 域名类型 | OSS 路径 | 说明 |
 |----------|---------|------|
-| 默认域名 | `midscene-reports/xxx` | 去掉 `.html` 后缀，绕过强制下载 |
-| 自定义域名 | `midscene-reports/xxx.html` | 保留原始后缀，自定义域名无限制 |
+| 默认域名 | `report/xxx` | 去掉 `.html` 后缀，绕过强制下载 |
+| 自定义域名 | `report/xxx.html` | 保留原始后缀，自定义域名无限制 |
 
 ### 备选方案对比（已排除）
 
@@ -803,7 +805,7 @@ MIDSCENE_OSS_TOKEN_URL=https://ufo2.alitrip.com/api/multiappAutoJob/getOssToken.
 # 可选覆盖
 # MIDSCENE_OSS_REGION=oss-cn-beijing
 # MIDSCENE_OSS_BUCKET=xrayandroid
-# MIDSCENE_OSS_PREFIX=midscene-reports/
+# MIDSCENE_OSS_PREFIX=report/
 # MIDSCENE_OSS_DOMAIN=https://your-custom-domain.com
 
 # 报告体积优化：截图 JPEG 压缩（可选，1-100，推荐 80）
@@ -816,8 +818,10 @@ MIDSCENE_REPORT_JPEG_QUALITY=80
 npx midscene run ./demo_web.ts
 
 # 输出：
-# Midscene - report finalized: /path/to/local/report.html
-# Midscene - online report: https://xrayandroid.oss-cn-beijing.aliyuncs.com/midscene-reports/report
+# report finalized: /path/to/local/report.html
+# report optimized: removed 55 redundant dumps, saved 41.4 MB
+# screenshots compressed: 14 PNG → JPEG (quality=80), saved 19.2 MB
+# online report: https://xrayandroid.oss-cn-beijing.aliyuncs.com/report/report
 ```
 
 ## 风险与注意事项
