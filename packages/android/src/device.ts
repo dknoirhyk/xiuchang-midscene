@@ -1644,18 +1644,18 @@ ${Object.keys(size)
 
         if (
           !configuredStrategy ||
-          configuredStrategy === IME_STRATEGY_CLIPBOARD
+          configuredStrategy === IME_STRATEGY_ADB_KEYBOARD
         ) {
-          // Default or explicit clipboard → clipboard first, adb-keyboard second
+          // Default or explicit adb-keyboard → adb-keyboard first, clipboard second
           effectiveFallback = [
-            IME_STRATEGY_CLIPBOARD,
             IME_STRATEGY_ADB_KEYBOARD,
+            IME_STRATEGY_CLIPBOARD,
           ];
-        } else if (configuredStrategy === IME_STRATEGY_ADB_KEYBOARD) {
-          // Explicit adb-keyboard → adb-keyboard first, clipboard second
+        } else if (configuredStrategy === IME_STRATEGY_CLIPBOARD) {
+          // Explicit clipboard → clipboard first, adb-keyboard second
           effectiveFallback = [
-            IME_STRATEGY_ADB_KEYBOARD,
             IME_STRATEGY_CLIPBOARD,
+            IME_STRATEGY_ADB_KEYBOARD,
           ];
         }
         // For 'always-yadb' / 'yadb-for-non-ascii': effectiveFallback remains
