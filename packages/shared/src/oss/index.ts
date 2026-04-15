@@ -118,7 +118,7 @@ export async function getOSSConfigFromEnv(): Promise<OSSUploadConfig | null> {
       process.env.MIDSCENE_OSS_REGION || stsResult.region || 'oss-cn-beijing',
     bucket: process.env.MIDSCENE_OSS_BUCKET || 'xrayandroid',
     endpoint: process.env.MIDSCENE_OSS_ENDPOINT,
-    prefix: process.env.MIDSCENE_OSS_PREFIX || 'midscene-reports/',
+    prefix: process.env.MIDSCENE_OSS_PREFIX || 'report/',
     customDomain: process.env.MIDSCENE_OSS_DOMAIN,
   };
 }
