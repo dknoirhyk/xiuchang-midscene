@@ -165,11 +165,9 @@ export class ReportGenerator implements IReportGenerator {
       return;
 
     if (this.screenshotMode === 'directory') {
-      logMsg(
-        `Midscene - report ${verb}: npx serve ${dirname(this.reportPath)}`,
-      );
+      logMsg(`report ${verb}: npx serve ${dirname(this.reportPath)}`);
     } else {
-      logMsg(`Midscene - report ${verb}: ${this.reportPath}`);
+      logMsg(`report ${verb}: ${this.reportPath}`);
     }
   }
 
@@ -247,7 +245,7 @@ export class ReportGenerator implements IReportGenerator {
 
       if (savedMB > 0.1) {
         logMsg(
-          `Midscene - report optimized: removed ${positions.length - 1} redundant dumps, saved ${savedMB.toFixed(1)} MB`,
+          `report optimized: removed ${positions.length - 1} redundant dumps, saved ${savedMB.toFixed(1)} MB`,
         );
       }
     } catch {
@@ -338,7 +336,7 @@ export class ReportGenerator implements IReportGenerator {
 
       if (savedMB > 0.1) {
         logMsg(
-          `Midscene - screenshots compressed: ${replacements.length} PNG → JPEG (quality=${quality}), saved ${savedMB.toFixed(1)} MB`,
+          `screenshots compressed: ${replacements.length} PNG → JPEG (quality=${quality}), saved ${savedMB.toFixed(1)} MB`,
         );
       }
     } catch {
@@ -360,9 +358,9 @@ export class ReportGenerator implements IReportGenerator {
 
       const result = await uploadReportToOSS(this.reportPath, ossConfig);
       if (result.success) {
-        logMsg(`Midscene - online report: ${result.url}`);
+        logMsg(`online report: ${result.url}`);
       } else {
-        logMsg(`Midscene - OSS upload failed: ${result.error}`);
+        logMsg(`OSS upload failed: ${result.error}`);
       }
     } catch {
       // Upload failure must never affect main flow

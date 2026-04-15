@@ -233,7 +233,7 @@ export function writeDumpReport(
       flag: appendReport ? 'a' : 'w',
     });
 
-    logMsg(`Midscene - dump file written: ${jsonPath}`);
+    logMsg(`dump file written: ${jsonPath}`);
   }
 
   return reportPath;

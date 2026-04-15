@@ -172,7 +172,7 @@ export function printReportMsg(filepath: string) {
   if (globalConfigManager.getEnvConfigInBoolean(MIDSCENE_REPORT_QUIET)) {
     return;
   }
-  logMsg(`Midscene - report file updated: ${filepath}`);
+  logMsg(`report file updated: ${filepath}`);
 }
 
 export function ifPlanLocateParamIsBbox(
