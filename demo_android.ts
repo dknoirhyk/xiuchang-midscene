@@ -13,7 +13,7 @@ Promise.resolve(
       // imeStrategy: 'adb-keyboard',
     });
 
-    await agent.aiAct('在猪搜搜索：杭州');
+    await agent.aiAct('在猪搜搜索杭州');
 
     // 必须调用 destroy() 以完成报告最终化（含 OSS 上传）
     await agent.destroy();
