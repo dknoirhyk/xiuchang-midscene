@@ -16,7 +16,7 @@ const path = require('node:path');
 const { execSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const VERSION = '2.0.2';
+const VERSION = '2.0.3';
 
 const REPLACEMENTS = [
   ['@midscene/shared', '@xiuchang-midscene/shared'],
