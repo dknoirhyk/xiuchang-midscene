@@ -1,5 +1,3 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { ActionParam, ActionReturn, DeviceAction } from '@midscene/core';
 import { type AgentOpt, Agent as PageAgent } from '@midscene/core/agent';
 import { getDebug } from '@midscene/shared/logger';
@@ -137,7 +135,7 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
    * Skips if the same package knowledge is already loaded.
    * @param packageName - The Android package name (e.g. "com.taobao.trip")
    */
-  loadAppKnowledge(packageName: string): void {
+  async loadAppKnowledge(packageName: string): Promise<void> {
     if (this.lastKnowledgePackageName === packageName) {
       debugAgent(
         'knowledge already loaded for package: %s, skipping',
@@ -146,7 +144,7 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
       return;
     }
 
-    const knowledge = getKnowledgeForPackage(packageName);
+    const knowledge = await getKnowledgeForPackage(packageName);
     if (knowledge) {
       this.setAIActContext(knowledge);
       debugAgent('loaded app knowledge for package: %s', packageName);
@@ -155,16 +153,18 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
     }
 
     // Set up screenshot knowledge provider for planning-time injection
-    const pageIds = getPageIdsForPackage(packageName);
+    const pageIds = await getPageIdsForPackage(packageName);
     if (pageIds.length > 0) {
       this.availablePageIds = pageIds;
+      const defaultPage = await getDefaultPageForPackage(packageName);
       this.referenceScreenshotProvider = async (
         pageId: string | null,
       ): Promise<Array<{ name: string; url: string }>> => {
         // Cold start: use default page when no prediction is available
-        const effectivePageId = pageId ?? getDefaultPageForPackage(packageName);
+        const effectivePageId = pageId ?? defaultPage;
         if (!effectivePageId) return [];
-        return this.resolveReferenceScreenshots(effectivePageId, packageName);
+        // getScreenshotsForPage returns base64 data URLs from OSS directly
+        return getScreenshotsForPage(packageName, effectivePageId);
       };
       debugAgent(
         'screenshot knowledge provider set for package: %s (%d pages)',
@@ -180,31 +180,6 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
   }
 
   /**
-   * Resolve annotated reference screenshots for a given page to base64 data URLs.
-   * @param pageId - The page identifier
-   * @param packageName - The Android package name
-   * @returns Array of base64 image data objects, empty if no screenshots found
-   */
-  private async resolveReferenceScreenshots(
-    pageId: string,
-    packageName: string,
-  ): Promise<Array<{ name: string; url: string }>> {
-    const screenshotPaths = getScreenshotsForPage(packageName, pageId);
-    if (!screenshotPaths.length) return [];
-
-    return Promise.all(
-      screenshotPaths.map(async (p, i) => {
-        const base64 = await fs.promises.readFile(p, { encoding: 'base64' });
-        const ext = path.extname(p).slice(1) || 'jpeg';
-        return {
-          name: `${pageId}-${i + 1}`,
-          url: `data:image/${ext};base64,${base64}`,
-        };
-      }),
-    );
-  }
-
-  /**
    * Detect the foreground Android app and automatically load its business knowledge.
    * Uses ADB to get the currently resumed activity and extract the package name,
    * then calls loadAppKnowledge() with the detected package name.
@@ -217,7 +192,7 @@ export class AndroidAgent extends PageAgent<AndroidDevice> {
       );
       const packageName = parseForegroundPackageName(dumpsysOutput);
       if (packageName) {
-        this.loadAppKnowledge(packageName);
+        await this.loadAppKnowledge(packageName);
       } else {
         debugAgent('could not detect foreground app package name');
       }

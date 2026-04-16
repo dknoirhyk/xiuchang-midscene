@@ -128,6 +128,20 @@ export async function getOSSConfigFromEnv(): Promise<OSSUploadConfig | null> {
 // ========================
 
 /**
+ * 创建 OSS 客户端实例
+ */
+export function createOSSClient(config: OSSUploadConfig): OSS {
+  return new OSS({
+    region: config.region,
+    accessKeyId: config.accessKeyId,
+    accessKeySecret: config.accessKeySecret,
+    stsToken: config.stsToken,
+    bucket: config.bucket,
+    endpoint: config.endpoint ? `https://${config.endpoint}` : undefined,
+  });
+}
+
+/**
  * 上传单个 HTML 报告文件到 OSS
  *
  * 关于 HTML 预览：

@@ -1,126 +1,105 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { getDebug } from '@midscene/shared/logger';
-import { fliggyKnowledge } from './fliggy';
+import {
+  type AppManifest,
+  fetchAppManifest,
+  fetchScreenshotAsBase64,
+  fetchTextKnowledge,
+} from './oss-reader';
 
 const debug = getDebug('android:app-knowledge');
 
 /**
- * Maximum number of reference screenshots to return per page.
- * Controls token cost when injecting annotated images into planning.
- */
-const MAX_SCREENSHOTS_PER_PAGE = 2;
-
-/**
- * Configuration for an App's knowledge base, including text knowledge
- * and screenshot-related settings.
- */
-interface AppKnowledgeConfig {
-  /** Text knowledge content */
-  knowledge: string;
-  /** Directory name under screenshots/ for this app */
-  screenshotDirName: string;
-  /** Default page identifier for the first planning round (cold start) */
-  defaultPage: string;
-  /** Available page identifiers, dynamically passed to the model */
-  pageIds: string[];
-}
-
-/**
- * Mapping from Android package names to their full knowledge configuration.
+ * Mapping from Android package names to their OSS directory name.
  * Add new entries here when supporting additional apps.
  */
-const packageConfigMap: Record<string, AppKnowledgeConfig> = {
-  'com.taobao.trip': {
-    knowledge: fliggyKnowledge,
-    screenshotDirName: 'fliggy',
-    defaultPage: 'home',
-    pageIds: [
-      'home',
-      'search-default',
-      'search-sug',
-      'search-result',
-      'fliggy-qwen',
-      'ticket-detail',
-      'hotel-list',
-      'hotel-detail',
-      'flight-list',
-      'flight-detail',
-      'ticket-order',
-      'hotel-order',
-      'flight-order',
-    ],
-  },
+const packageOssDirMap: Record<string, string> = {
+  'com.taobao.trip': 'fliggy',
 };
 
 /**
- * Get business knowledge content for a given Android package name.
- * @param packageName - The Android package name (e.g. "com.taobao.trip")
- * @returns The knowledge text if found, or null if no knowledge is registered for this package
+ * Resolve the OSS directory name for a given Android package name.
+ * @returns The directory name or null if no mapping exists
  */
-export function getKnowledgeForPackage(packageName: string): string | null {
-  const config = packageConfigMap[packageName];
-  if (config) {
-    debug('found knowledge for package: %s', packageName);
-    return config.knowledge;
-  }
-  debug('no knowledge found for package: %s', packageName);
-  return null;
+function getOssDirForPackage(packageName: string): string | null {
+  return packageOssDirMap[packageName] ?? null;
 }
 
 /**
- * Get annotated screenshot paths for a given package and page.
- * Returns up to MAX_SCREENSHOTS_PER_PAGE images from the page's screenshot directory.
+ * Get business knowledge content for a given Android package name.
+ * Fetches text knowledge from OSS (with in-memory cache).
+ * @param packageName - The Android package name (e.g. "com.taobao.trip")
+ * @returns The knowledge text if found, or null if no knowledge is registered for this package
+ */
+export async function getKnowledgeForPackage(
+  packageName: string,
+): Promise<string | null> {
+  const ossDirName = getOssDirForPackage(packageName);
+  if (!ossDirName) {
+    debug('no OSS dir mapping for package: %s', packageName);
+    return null;
+  }
+
+  const knowledge = await fetchTextKnowledge(ossDirName);
+  if (knowledge) {
+    debug('loaded OSS text knowledge for package: %s', packageName);
+  } else {
+    debug('no OSS text knowledge available for package: %s', packageName);
+  }
+  return knowledge;
+}
+
+/**
+ * Get annotated screenshots for a given package and page as base64 data URLs.
+ * Fetches from OSS using the manifest to determine file names.
+ * All screenshots for the page are returned.
  * @param packageName - The Android package name
  * @param pageId - The page identifier (e.g. "home", "search-result")
- * @returns Array of absolute file paths, empty if no screenshots found
+ * @returns Array of base64 image data objects, empty if no screenshots found
  */
-export function getScreenshotsForPage(
+export async function getScreenshotsForPage(
   packageName: string,
   pageId: string,
-): string[] {
-  const config = packageConfigMap[packageName];
-  if (!config) {
-    debug('no config for package: %s, skipping screenshots', packageName);
+): Promise<Array<{ name: string; url: string }>> {
+  const ossDirName = getOssDirForPackage(packageName);
+  if (!ossDirName) {
+    debug(
+      'no OSS dir mapping for package: %s, skipping screenshots',
+      packageName,
+    );
     return [];
   }
 
-  const pageDir = path.join(
-    __dirname,
-    'screenshots',
-    config.screenshotDirName,
-    pageId,
+  const manifest = await fetchAppManifest(ossDirName);
+  if (!manifest) {
+    debug('no manifest available for %s, skipping screenshots', ossDirName);
+    return [];
+  }
+
+  const fileNames = manifest.screenshots?.[pageId];
+  if (!fileNames?.length) {
+    debug('no screenshot files listed for %s/%s', ossDirName, pageId);
+    return [];
+  }
+
+  const results = await Promise.all(
+    fileNames.map((fileName) =>
+      fetchScreenshotAsBase64(ossDirName, pageId, fileName),
+    ),
   );
 
-  if (!fs.existsSync(pageDir)) {
-    debug('screenshot directory not found: %s', pageDir);
-    return [];
-  }
+  // Filter out nulls (failed fetches)
+  const screenshots = results.filter(
+    (r): r is { name: string; url: string } => r !== null,
+  );
 
-  try {
-    const files = fs.readdirSync(pageDir);
-    const imageFiles = files
-      .filter((f) => /\.(jpg|jpeg|png)$/i.test(f))
-      .map((f) => path.join(pageDir, f));
-
-    if (imageFiles.length === 0) {
-      debug('no image files in directory: %s', pageDir);
-      return [];
-    }
-
-    const result = imageFiles.slice(0, MAX_SCREENSHOTS_PER_PAGE);
-    debug(
-      'found %d screenshot(s) for %s/%s (returning %d)',
-      imageFiles.length,
-      packageName,
-      pageId,
-      result.length,
-    );
-    return result;
-  } catch (err) {
-    debug('error reading screenshot directory %s: %s', pageDir, err);
-    return [];
-  }
+  debug(
+    'fetched %d/%d screenshot(s) for %s/%s',
+    screenshots.length,
+    fileNames.length,
+    packageName,
+    pageId,
+  );
+  return screenshots;
 }
 
 /**
@@ -129,9 +108,14 @@ export function getScreenshotsForPage(
  * @param packageName - The Android package name
  * @returns The default page identifier, or null if no config exists
  */
-export function getDefaultPageForPackage(packageName: string): string | null {
-  const config = packageConfigMap[packageName];
-  return config?.defaultPage ?? null;
+export async function getDefaultPageForPackage(
+  packageName: string,
+): Promise<string | null> {
+  const ossDirName = getOssDirForPackage(packageName);
+  if (!ossDirName) return null;
+
+  const manifest = await fetchAppManifest(ossDirName);
+  return manifest?.defaultPage ?? null;
 }
 
 /**
@@ -140,7 +124,12 @@ export function getDefaultPageForPackage(packageName: string): string | null {
  * @param packageName - The Android package name
  * @returns Array of page identifier strings, empty if no config exists
  */
-export function getPageIdsForPackage(packageName: string): string[] {
-  const config = packageConfigMap[packageName];
-  return config?.pageIds ?? [];
+export async function getPageIdsForPackage(
+  packageName: string,
+): Promise<string[]> {
+  const ossDirName = getOssDirForPackage(packageName);
+  if (!ossDirName) return [];
+
+  const manifest = await fetchAppManifest(ossDirName);
+  return manifest?.pageIds ?? [];
 }
